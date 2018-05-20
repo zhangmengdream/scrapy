@@ -137,8 +137,10 @@ response.css('.name')extract()
 middleware 在setting中配置的 数字越小处理越优先，自己设置的要数字大一些，这样才不会被覆盖
 
 ```python
-
-
+middleware里面需要自己去写的几个函数：
+一、process_request(request,spider)
+二、process_response(request,response,spider)
+三、process_exception(request,exception,spider)
 
 
 
