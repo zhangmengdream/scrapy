@@ -1,0 +1,79 @@
+# -*- coding: utf-8 -*-
+import scrapy
+import re
+from urllib import parse
+from scrapy import Request
+
+
+
+class ManhuaSpider(scrapy.Spider):
+    name = 'manhua'
+    allowed_domains = ['www.1kkk.com/manhua-original-s10-p1/']
+    start_urls = ['http://www.1kkk.com/manhua-original-s10-p1/']
+
+    def parse(self, response):
+
+    # 获取下一页的链接
+        next_pages = response.xpath("//div[@class='page-pagination pull-right mt20']/ul/li/a/@href").extract_first('')
+        for next_page in next_pages:
+            if next_page:
+
+                yield Request(url = parse.urljoin(response.url,next_page),callback=self.parse_detail)
+
+
+
+
+
+
+
+    def parse_detail(self,response):
+
+
+        # if 'class = ad_360_item'   如果ｃｌａｓｓ是这个表示是广告，忽略掉　　
+        # if not class = ad_360_item  ???? 加一层过滤
+
+
+        # 标题
+        title = response.xpath('//div[@class="mh-item-tip-detali"]/h2/a/text()').extract()
+        # 评分
+        score = response.xpath('//div[@class="mh-item-tip-detali"]/h2/span/@class').re('.*?(\d+)')
+        # 最新更新
+        news = response.xpath('//div[@class="mh-item-tip-detali"]/p[2]/a/text()').extract()
+        # 图片链接
+        image = response.xpath("//div[@class='mh-item-tip']/a/p/@style").extract()
+        #作者  ???
+        author = response.xpath('//div[@class="mh-item-tip-detali"]/p[1]/span[2]/a/text()').extract()
+        # 简介
+        brief = response.xpath('//div[@class="mh-item-tip-detali"]/div/text()').extract()
+        # 优惠活动　　可为空
+        brief = response.xpath('//div[@class="mh-item-tip-detali"]/div/text()').extract()
+
+
+
+
+# 嵌套选择器
+# >>> links = response.xpath('//a[contains(@href, "image")]')
+# >>> links.extract()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

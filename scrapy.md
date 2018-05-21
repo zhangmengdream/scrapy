@@ -227,6 +227,24 @@ eg:
    
 ```
 
+#### spider部分源码
+
+```python
+spider源码里面会调用start_requests先遍历start_url，遍历完之后，调用make_request_from_url,返回request，然后调用下载器中间件的process_request，下载完成之后,这样就会调用我们下面的parse函数了。
+```
+
+##### windows下第一次运行spider的时候，可能会出现没有win32api安装包的情况
+
+```py 
+pip install -i https://pypi.douban.com/simple/ pypiwin32  即可
+```
+
+
+
+
+
+
+
 
 
 ```python
@@ -775,13 +793,35 @@ class JSPageMiddleware(object):
 
 
 
+scrapy给我们提供了下载图片的机制，需要在setting里面设置一个imagepipeline即可
+
+```python
+'scrapy.pipelines.images.ImagesPipeline':1
+后面的数字越小就会越早处理这个pipeline
+
+pipeline怎么知道去item中取哪个字段，所以这里需要配置
+IMAGES_URLS_FIELD = "字段名"
+配置完之后，image回去item里面去找这个字段进行下载，下载图片需要设置图片的保存路径
+设置路径需要写一个绝对路径，所以需要用os设置images的路径位置(设置图片下载的路径)
+import os
+project_dir = "os.path.abspath(os.path.dirname(__file__))"
+IMAGES_STORE= ps.path.join(project_dir,'images')
+```
+
+
+
+需要专门写一个图片处理的pipeline
 
 
 
 
 
+#### twisted异步机制
 
-
+```python
+callback=self.parse
+这里只是指定了函数名，并没有做调用，因为scrapy的底层是基于Twisted这个框架来完成的，twisted就会根据我们的函数名来自动调用我们的函数
+```
 
 
 

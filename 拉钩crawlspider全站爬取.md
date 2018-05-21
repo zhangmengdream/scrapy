@@ -137,9 +137,20 @@ response.css('.name')extract()
 middleware 在setting中配置的 数字越小处理越优先，自己设置的要数字大一些，这样才不会被覆盖
 
 ```python
-middleware里面需要自己去写的几个函数：
+下载器中间件middleware里面需要自己去写的几个函数：
 一、process_request(request,spider)
+	当每个request通过下载器中间件时，该方法被调用
+    返回： None 	   或者
+    	  Response   或者
+    	  Request    或者
+    	  raise（IgnoreRequest）
+         
 二、process_response(request,response,spider)
+	会在每个response返回时被调用
+    返回： Response   或者
+    	  Request    或者
+    	  raise（IgnoreRequest）
+            
 三、process_exception(request,exception,spider)
 
 
@@ -149,7 +160,7 @@ middleware里面需要自己去写的几个函数：
 
 
 
-
+ 
 
 
 
