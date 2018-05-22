@@ -482,29 +482,188 @@ class ArticalImagePipeline(ImagesPipeline)：
 ** 重要函数
 get_media_requests()   传入的必须是列表或者可迭代的对象 获取了url之后，把这个url凑成一个request交给scrapy下载器进行下载
 item_completes()
+```
+
+#### 插入本地json文件中的两种方法（除了文件名需要修改，其他都是固定格式）
+
+```python
+# 方法一：   自定义ｊｓｏｎ文件的导出
+class JsonExporterPipeline(object):
+    # 调用ｓｃｒａｐｙ提供的ｊｓｏｎ　ｅｘｐｏｒｔ　导出ｊｓｏｎ文件
+    def __init__(self):
+        self.file = open('articalexport.json','wb')
+        self.exporter = JsonItemExporter(self.file,encoding='utf-8',ensure_ascii=False)
+        self.exporter.start_exporting()
+
+    def process_item(self,item,spider):
+        self.exporter.export_item(item)
+        return item
+
+    def close_spider(self,spider):
+        # 停止导出
+        self.exporter.finish_exporting()
+        self.file.close()
+
+# 方法二：
+class JsonWithEncodingPipeline(object):
+    # 自定义json文件的导出
+    def __init__(self):
+        self.file = codecs.open('manhua.json','w',encoding='utf-8')
+
+    def process_item(self,item,spider):
+        lines = json.dumps(dict(item),ensure_ascii=False)+'\n'
+        self.file.write(lines)
+        return item
+    def spider_closed(self,spider):
+        self.file.close()
 
 
+```
 
+#### 插入mysql数据库的两种方法
 
+```python
+方法一：（同步的操作）
+class MysqlPipeline(object):
+    def __init__(self):
+        self.conn = MySQLdb.connect('127.0.0.1','root','test1999','manhua',charset='utf8',use_unicode=True)
+        self.cursor = self.conn.cursor()
 
+    def process_item(self,item,spider):
+        insert_sql = """
+            insert into manhua_info(title, score, statuss, themes, war, image, authorss, brief, image_path, url) 
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        self.cursor.execute(insert_sql, (item["title"], item["score"], item["statuss"], item["themes"], item["war"], item["image"][0], item["authorss"], item["brief"], item["image_path"], item["url"]))
+        self.conn.commit()
+
+方法二： （异步的操作）
+# spider的解析速度肯定是超过数据库的入库速度，如果后期爬取的url越来越多，入库速度回跟不上解析速度，这样的话就会堵塞   tw isted给我们提供了mysql插入异步化的操作
+需要先在 setting里面配置
+MYSQL_HOST = '127.0.0.1'
+MYSQL_DBNAME = 'manhua'
+MYSQL_USER = 'root'
+MYSQL_PASSWORD = 'test1999'
+
+from twisted.enterprise impore adbapi
+#adbapi 会将mysql的操作变成异步化的操作
+class MysqlTwistedPipeline(object):
+    def __init__(self,dbpool):
+        self.dbpool = dbpool
+    @classmethod
+    def from_settings(cls,settings):
+        # 这个方法的参数就是settings  会读取settings里面的值
+        dbparms = dict(
+            host = settings['MYSQL_HOST'],
+            db = settings['MYSQL_DBNAME'],
+            user = settings['MYSQL_USER'],
+            passwd = settings['MYSQL_PASSWORD'],
+            charset = 'utf8',
+            cursorclass = MySQLdb.cursor.DictCursor,
+            use_unicode = True,
+		)
+        dbpool = adbapi.ConnectionPool("MySQLdb",**dbparms) 
+        return cls(dbpool)
+        # 这里返回也就是一个实例化的pipeline（实例化的对象）
+        
+    def process_item(self,item,spider):
+        #使用twisted 将mysql插入变成异步执行
+        query = self.dbpool.runInteraction(self.do_insert,item)
+        #处理异常
+        query.addErrback(self.handle_error,item,spider)
+        
+    def handle_error(self,failure,item,spider):
+        #处理异步插入的异常
+        print(failure)
+    def do_insert(self,cursor,item):
+        #执行具体的插入
+                insert_sql = """
+            insert into manhua_info(title, score, statuss, themes, war, image, authorss, brief, image_path, url) 
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        #这里的cursor用传递进来的参数cursor就可以了， 也不需要commit 因为会自动帮我们保存 
+        cursor.execute(insert_sql, (item["title"], item["score"], item["statuss"], item["themes"], item["war"], item["image"][0], item["authorss"], item["brief"], item["image_path"], item["url"]))
 
 ```
 
 
 
-
-
-
-
-
-
 ## Itemloader
-
-
 
 scrapy的itemloader机制，可以让我们的维护工作变得更加简单
 
+itemloader提供的是一个容器，可以配置item提供的某一个字段需要那种规则来解析
 
+```markdown
+from scraoy.loader import ItemLoader
+#通过itemloader加载item
+itemloader = ItemLoader(item=ManhuaItem(),response=response)
+itemloader.add_xpath('title','//div[@class="banner_detail_form"]/div[2]/p[1]/text()')
+itemloader.add_value('url',response.url)
+itemloader.add_xpath('score','//div[@class="banner_detail_form"]/div[2]/p[1]/span/span[1]/text()')
+itemloader.add_xpath('statuss','//div[@class="banner_detail_form"]/div[2]/p[3]/span[1]/span/text()')
+itemloader.add_xpath('themes','//div[@class="banner_detail_form"]/div[2]/p[3]/span[2]/a/span/text()')
+itemloader.add_xpath('war','//div[@class="banner_detail_form"]/div[2]/p[3]/span[3]/text()')
+itemloader.add_xpath('image','//div[@class="banner_detail_form"]/div/img/@src')
+itemloader.add_xpath('authorss','//div[@class="banner_detail_form"]/div[2]/p[2]/a/text()')
+itemloader.add_xpath('brief','//div[@class="banner_detail_form"]/div[2]/p[4]/text()')
+# 调用这个方法，才会将以上的规则进行解析
+manhua_item = itemloader.load_item()
+yield manhua_item
+
+# 有三种比较重要的方法
+itemloader.add_css()
+itemloader.add_xpath()
+itemloader.add_value()
+
+**通过以上过程debug可以发现有两个问题
+一、有的字段需要处理函数
+这时候我们就需要在items里面定义字段的时候进行修改了
+
+from scrapy.loader.processors import MapCompose,TakeFirst
+
+MapCompose 里面可以连续调用多个函数 ，做多次处理
+这里面的Field里面实际上是有两个参数可以自定义的
+eg: 
+title = scrapy.Field(
+   input_processor =  MapCompose()
+   )
+   input_processor表示当item里面的值传递进来之后，可以对这个item里面的值进行预处理
+
+def add_job(value):
+  return value+'-add_job'
+  
+class ManhuaItem(scrapy.Item):
+   title = scrapy.Field(
+      input_processor =  MapCompose(add_job)
+   )
+   url = scrapy.Field()
+   score = scrapy.Field()
+   statuss = scrapy.Field()
+   themes = scrapy.Field()
+   war = scrapy.Field()
+   image = scrapy.Field()
+   image_path = scrapy.Field()
+   authorss = scrapy.Field()
+   brief = scrapy.Field()
+
+** 二、获取的值都是列表
+
+方法（1）在字段内加函数
+from scrapy.loader.processor TakeFirst
+class ManhuaItem(scrapy.Item):
+   title = scrapy.Field(
+      input_processor =  MapCompose(add_job)
+      output_processor = TakeFirst()
+   )
+
+方法（2）自定义一个itemloader，来取第一个值 ------（重载ItemLoader这个类） --- 推荐
+from scrapy,loader import ItemLoader
+class ManhuaItemLoader(ItemLoader)
+	default_output_processor = TakeFirst()
+	
+这样在spider页面就用manhuaItemLoader 代替 ItemLoader 来使用
+```
 
 
 
@@ -643,15 +802,13 @@ VALUES 是会从后面的参数中取值的
 
 
 
-debug的快捷键 f6  f8 
 
 
 
 
 
-1490970181893
 
-t = str(int(time.time() * 1000)) 
+
 
 
 
