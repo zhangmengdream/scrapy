@@ -209,7 +209,11 @@ pip install crawlera
 
 
 
+当请求频率过快的时候 中间需要填写验证码，怎么做
 
+怎么爬app  --------    如何用Fiddler对Android应用进行抓包 ？？？？？？？？
+
+怎么爬视频 
 
 
 

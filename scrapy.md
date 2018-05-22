@@ -19,7 +19,7 @@ mysql提供的一个权限设置的命令
 ```python
 #权限的赋值命令
 
-GRANT ALL PRIVIEGES ON *.* TO 'root'@'%' IDENTIFIED BY 'root' WITH GRANT OPTION;
+GRANT ALL PRIVIEGES ON *.* TO 'root'@'%' IDENTIFIED BY 'root' WITH GRANT OPTION;吗
 # GRANT ALL PRIVILEGES 设置所有权限的命令
 # *.* 表示所有的表都要设置权限
 # root  表示通过root表链接过来
@@ -188,6 +188,12 @@ node.elem  打印a的值
 
 
 
+![52696162931](C:\Users\dream\AppData\Local\Temp\1526961629318.png)
+
+爬虫去重策略
+
+将url经过md5保存到set中，
+
 
 
 # scrapy
@@ -256,14 +262,6 @@ pip install -i https://pypi.douban.com/simple/ pypiwin32  即可
 
 
 
-
-
-
-
-
-
-
-
 response里面本身是带有xpath的方法的
 
 ```python
@@ -300,6 +298,42 @@ extract_first()与extract()[0]
 可能这个数组为空
 此时取extract()[0]有可能会抛出异常，这时候就需要做异常处理
 extract_first()这个就不需要异常处理了，为空的话就会返回null
+```
+
+#### 字符串函数
+
+```python
+获取的字段中 如果有不想要的字符可以用replace  来将字符中不想要的部分替换成空格 
+		   如果有不想要的空格，用strip() 去出空格
+		   如果有不想要的字段，可以split() 分割字段取出需要的部分
+```
+
+### xpath里面的函数
+
+```python
+contains   内置函数   
+第一个参数表示取什么的属性值
+
+//span[contains(@class,"vote-piost-up")]
+这个表示，我需要找一个span ，这个span的class包含了vote-piost-up这个字符串
+-----------------------------------------------------------------------------
+
+
+
+
+
+```
+
+```python
+#需要取封面图的时候，也就是主页面，点击连接时的连接图片也需要传递到数据中的时候，需要用meta，这样就会传递到子页面的response中了
+for post_node in post_nodes:
+    image_url = post_node.css("img::attr(src)").extract_first("")
+    post_url = post_node.css("::attr(href)").extract_first("")
+	yield Request(url=parse.urljoin(response.url,post_url),meta={"front_image_url":image_url}, callback=self.parse_detail)
+
+  
+下面取字段时：    
+front_image_url = response.meta.get('front_image_url','') # 后面的空代表默认值
 ```
 
 
@@ -407,8 +441,62 @@ pipeline会拦截item，可以在这里把item保存在数据库等任何想要�
 ```python
 pip install -i https://pypi.douban.com/simple/ mysqlclient
 
-sudo apt-get install libmysql
+Ubuntu 下的安装
+sudo apt-get install libmysqlclient-devsimp
 ```
+
+#### 将图片保存在本地中
+
+```python
+# settings里面设置
+ITEM_PIPELINES = {
+'scrapy.pipelines.images.ImagesPipeline':1,
+}
+project_dir = os.path.abspath(os.path.dirname(__file__))
+IMAGES_STORE = os.path.join(project_dir,'images')
+#设置过滤掉一些图片(下面的设置表示下载的图片必须是尺寸大圩100*100的)
+IMAGES_MIN_HEIGHT = 100
+IMAGES_MIN_HEIGHT = 100
+    
+
+#images 是我需要取数据的字段名
+
+如果图片的路径如果想要显示出来，用item展示出来
+图片已经保存到了本地，怎么能够把本地的图片路径和item记录绑定起来，放到front_image_path 里面
+
+方法: 定义自己的pipeline继承ImagesPipeline，让自己的某些功能能够定制
+    ImagesPipeline里面有很多函数可以重载
+    
+from scrapy.pipelines.images import ImagesPipeline  
+class ArticalImagePipeline(ImagesPipeline)：
+
+# 获取图片在本地下载的路径   需要重载ImagesPipeline里面的item_completes这个函数
+	def item_completes(self,results,item,info):
+        #results里面有我们想要的数据
+		for ok, value in results:
+            image_file_path = value["path"]
+        item["image_path"] = image_file_path
+#此时item里面就有了我们获取的图片路径的值，然后将这个item返回，因为pipeline设置的执行顺序是先执行自定义的这个pipeline，然后执行ManhuaspiderPipeline ，所以会把我怕们设置的路径的值带过去
+        return item  
+
+** 重要函数
+get_media_requests()   传入的必须是列表或者可迭代的对象 获取了url之后，把这个url凑成一个request交给scrapy下载器进行下载
+item_completes()
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
 
 ## Itemloader
 
