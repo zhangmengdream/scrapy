@@ -1324,39 +1324,90 @@ def parse(self,response):
 
 ```python
 scrapy提供了方便的收集数据的机制，数据以key/value方式存储，也就是dict
+(数据收集器一般都是数据类型的)
 
-例子： 
+让spider的统计信息统一管理，让我们操作起来非常简单
+常见的数据收集器的使用方法：
+通过stats属性来使用数据收集器
+
+stats是类的对象（里面放置了很多spider的数据），他的对象有一些函数：
+设置数据: 
+stats.set_value('hostname',socket.gethostname())
+增加数据：  （调用inc_value数据就会加1）
+stats.inc_value('pages_crawled')
+当新的值比原来的值大的时候，设置为新的数据：
+stats.max_value('max_items_scraped',value)
+当新的值比原来的值小的时候，设置为新的数据：
+stats.min_value('max_items_scraped',value)
+获取数据:
+stats.get_value('hostname',socket.gethostname())
+
+# 数据收集器：
+一、MemoryStatsCollector   （用的最多的）
+是放在内存中的
+
+    def __init__(self, crawler):
+        self._dump = crawler.settings.getbool('STATS_DUMP')
+        self._stats = {}
+STATS_DUMP是可以在setting中设置的
+                
+二、DummyStatsCollector
+
+
+# 例子： 
 需求、收集伯乐在线的所有404url以及404页面数
-
 spider默认情况下只会处理状态为200到300之间的页面
 为了将404可以进行统计需要设置
 
-
 handle_httpstatus_list= [404]
+
 #所有404url以及404页面数 设置保存这两个数据的变量
 def __init__(self):
-    #用来保存所有404的页面
+    #用来保存所有404的页面 
     self.fail_urls=[]
     dispatcher.connect(self.handle_spider_closed, signals.spider_closed)
 def parse(self,response):
     if response.status == 404:
         self.fail_urls.append(response.url)
         self.crawler.stats.inc_value("failed_url")
+	...................
+    
+self每一个变量都有一个crawler
+inc_value 这个函数就是自动＋1了
 
 
-
+debug的时候可以看到stats里面有过很多scrapy的中间件、扩展等给我们默认填充的值，这些值就可以帮我们很好地的了解spider的一些状态
 ```
 
 
 
 ### scrapy的信号和扩展
 
+信号是中间件和扩展之间的桥梁、、
 
+scrapy的组件和扩展都是基于信号来设计的
 
-信号是中间件扩展之间的桥梁
+scrapy本身内置了很多信号
+
+middleware是extension的一种
 
 ```python
+信号提供了一些参数，不过处理函数不用接收所有的参数
+信号分发机制仅仅提供处理器接收的参数
+
+
 延迟的信号处理器（Deferred signal handlers）
+
+# 内置信号：
+engine_started 当scrapy引擎启动爬取时，发送该信号（改信号可能在spider_opeded之后被发送，取决于spider的启动方式，所有不要依赖改信号会比spider_opened更早被发送）
+
+engine_stopped 当scrapy引擎停止爬取时，发送该信号
+
+item_scraped   当item被爬取，并通过所有的item pipeline后（没有被dropped，即丢弃），发送该信号
+
+item_dropped   当item被爬取，并通过item pipeline时，有pipeline抛出DropItem异常，丢弃item时发送该信号
+
+spider_closed  当spider被关闭的时候，发送该信号，改信号可以用来释放每个spider在spider_opened时占用的资源
 
 spider_opened  当spider开始爬取的时候，会发生这个信号，如果需要记录开始爬取的时间，可以捕捉这个信号，捕捉到这个信号之后，得到了开始爬取的时间们可以放到数据收集器当中
 
@@ -1368,16 +1419,33 @@ spider_idle   当spider空闲的时候，这个信号就开始发送
         
 spider_error  当回调函数产生错误的时候，改信号被发送
 
+request_scheduled 当引擎调度一个request对象，用于下载时，该信号被发送
+
+response_received 当引擎从ENGIN downloader获取到一个新的response的时候，发送该信号
+
+response_downloaded 当一个HTTPResponse被下载时，由downloader发送该信号
+
+以上的信号，可以根据自己的需要插入不同的逻辑
+
+
 .......
+示例： 
+需求 ：当closed 的时候将所有的404的url拼接成一个字符串
+dispatcher.connect(handle_spider_closed,signals.spider_closed)这句话的设置就是当spider_closed信号发出的时候就会进入handle_spider_closed这个逻辑
+stats里面是没有列表的
 
 jobbole.py
+
+handle_httpstatus_list = [404]
 
 def __init__(self):
     #用来保存所有404的页面
     self.fail_urls=[]
-def handle_spider_closed(self):
-    self.crawler.stats.set_value("failed_urls",",")
+    dispatcher.connect(self.handle_spider_closed,signals.spider_closed)
     
+def handle_spider_closed(self，spider，reason):
+    self.crawler.stats.set_value("failed_urls",",".join(self.fail_urls))
+
 def parse(self,response):
     if response.status == 404:
         self.fail_urls.append(response.url)
@@ -1387,15 +1455,23 @@ def parse(self,response):
 
 ### 如何开发scrapy的扩展
 
+扩展框架提供的一个机制，是的你能够自定义功能绑定到scrapy
+
+扩展只是正常的类，他们在scrapy启动时被实例化，初始化
+
+
+
 > scrapy和扩展的区别：  中间件都是缩减版的扩展
 >
-> 实际上中间件都是扩展
+> 实际上中间件都是扩展 spidermiddleware和downloader和pipeline都有manage 
 >
-> pipeline manage
+> manage都是归extension来管，所以理论上来讲他们的都是从extension manage出去的
 >
-> middleware里面的中间件都是和信号量进行绑定的
+> middleware都是功能首先得，middleware里面的函数都是和信号量进行绑定的
 >
 > 整个extension的机制是通过信号量来处理的
+
+
 
 
 
@@ -1415,12 +1491,27 @@ spider中间件能够重载的几个函数
 
 
 ```python
-分析scrapy内部提供的一个extension
+
+加载和激活extension
+在settings里面设置extension
+EXTENSIONS = {
+    'scrapy.extensions.corestats.CoreStats':500,
+    'scrapy.telnet.TelnetConsole':500,
+}
+
+实现自己的扩展
+自己的extension会灵活的多，要求我们自己去做singnal（信号的绑定，绑定我们的处理函数）
+这些处理函数会在信号被触发的时候去调用
+
+
+分析scrapy内部提供的一个extension（源码）
 
 throttle.py  是限速的
 telnet.py    
+corestats.py  记录了spider一些比较重要的统计信息（里面的整个原理都是通过crawler实现的）
 
-corestats.py  记录了spider一些比较重要的统计信息
+memusage.py   系统的信息
+通过信号量绑定一些处理函数（逻辑自便）
 
 
 
