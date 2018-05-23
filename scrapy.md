@@ -247,18 +247,9 @@ pip install -i https://pypi.douban.com/simple/ pypiwin32  即可
 
 
 
-
-
-
-
-
-
 ```python
 @class  选取所有名为class的
-
 ```
-
-
 
 
 
@@ -273,8 +264,6 @@ scrapy shell http://blog.jobbole.com/113909/
 
 
 strip()方法，去掉回车换行符
-
-
 
 replace（）方法替换
 
@@ -316,12 +305,6 @@ contains   内置函数
 
 //span[contains(@class,"vote-piost-up")]
 这个表示，我需要找一个span ，这个span的class包含了vote-piost-up这个字符串
------------------------------------------------------------------------------
-
-
-
-
-
 ```
 
 ```python
@@ -371,16 +354,6 @@ parse.urljoin有两个参数(base,url)  完成url的拼接
 如果传递进来的url有域名，则base里面的域名就起不了作用了
 url=parse.urljoin(response.url,post_url),callback
 ```
-
-
-
-
-
-yield  urljoin(response.url,post_url)
-
-itemloader
-
-
 
 
 
@@ -452,14 +425,23 @@ sudo apt-get install libmysqlclient-devsimp
 ITEM_PIPELINES = {
 'scrapy.pipelines.images.ImagesPipeline':1,
 }
+后面的数字越小就会越早处理这个pipeline
+
+pipeline怎么知道去item中取哪个字段，所以这里需要配置
+IMAGES_URLS_FIELD = "字段名"
+配置完之后，image回去item里面去找这个字段进行下载，下载图片需要设置图片的保存路径
+设置路径需要写一个绝对路径，所以需要用os设置images的路径位置(设置图片下载的路径)
+
+import os
 project_dir = os.path.abspath(os.path.dirname(__file__))
 IMAGES_STORE = os.path.join(project_dir,'images')
-#设置过滤掉一些图片(下面的设置表示下载的图片必须是尺寸大圩100*100的)
+#设置过滤掉一些图片(下面的设置表示下载的图片必须是尺寸大于100*100的)
 IMAGES_MIN_HEIGHT = 100
 IMAGES_MIN_HEIGHT = 100
-    
 
-#images 是我需要取数据的字段名
+#字段名 是我需要取数据的字段名
+
+
 
 如果图片的路径如果想要显示出来，用item展示出来
 图片已经保存到了本地，怎么能够把本地的图片路径和item记录绑定起来，放到front_image_path 里面
@@ -990,7 +972,7 @@ browser.find_element_by_css_selector(".Login-content button.SignFlow-submitButto
 
 ```
 
-##### 设置不加载图片有chromedriver （用里面的prefs参数） --- 好处节省时间，加快加载速度
+##### 设置不加载图片有chromedriver （用里面的prefs参数） --- 好处节省时间，加快加载速度 ---  chromedriver里面还有很多设置，自己研究
 
 geckodriver如何设置？？
 
@@ -1010,52 +992,485 @@ browser.get("https://www.taobao.com")
 步骤和chrom请求页面相同 ，不推荐， 
 
 ```python
-browser = webdriver.phantomJS(executable_path="")
+browser = webdriver.PhantomJS(executable_path="")
 browser.get('')
 prine(browser.page_source)
 browser.quit()
 ```
 
-更加推荐chrome，chrome在无界面的情况下也可以使用
+linux等无界面的系统个中phantomjs的好处就可以体现出来了，，
+
+phantomjs在多进程的情况下渲染是及其不稳定的，所以不推荐
+
+windows下更加推荐chrome，chrome在无界面的情况下也可以使用
 
 
 
-##### 如何将selenuim集成到script当中
+### 如何将selenuim集成到script当中
 
-一、设置一个中间件
+##### 一、设置一个中间件
 
 ```python
+同步方法：
+from selenium import webdriver
+from scrapy.http import HtmlResponse
 class JSPageMiddleware(object):
-    # 通过chrom请求动态网页
-    def
+    # 通过chrome请求动态网页
+    def process_request(self,request,spider):
+        if spider == "jobbole":
+			brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')
+			brower.get(request.url)
+			import time 
+             time.sleep(3)
+			return HtmlResponse(url= browser.current_url,body=browser.page_source,encoding='utf-8',request=request)
+        
+只需要给我们返回的page_source 做一个初始化就可以了 
+一遇到HtmlResponse，scrapy就不会给我们的downloader发送了，而是直接返回给我们的spider
+记得在setting中启动中间件
+
+--------------------------------------------------------------------------
+            
+#  每次请求的时候都会打开一个chrome这样会非常慢
+解决方法： 初始化的时候定义一个属于类的 browser,之后每次请求的时候用self.browser来请求页面, 这样就可以通过一个browser来请求多个页面，(但是浏览器不会自动关闭，解决方法下面信号部分，添加一个信号)
+
+class JSPageMiddleware(object):
+	def __init__（self）:
+        self.brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')         super(JSPageMiddleware,self).__init__()
+
+    def process_request(self,request,spider):
+        if spider.name == "jobbole":
+			self.brower.get(request.url)
+			import time 
+             time.sleep(3)
+             print("访问:{0}".format(request.url))
+			return HtmlResponse(url= self.browser.current_url,body=self.browser.page_source,encoding='utf-8',request=request)   
+          
+---------------------------------------------------------------------    
+            
+既然不是每个页面都需要chrome ，把chrome放入spider里面
+当启动多个spider的时候，就会有多个chrome，这样对我们的并发也是有好处的 
+所以解决方法是将__init__  放入spider中来做
+
+jobbole.py页面：
+
+from selenium import webdriver
+class JobboleSpider(scrapy.spider):
+    name = 'jobbole'
+      ......
+        
+	def __init__（self）:
+        self.brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')         super(JobboleSpider,self).__init__()
 
 
+middlewares.py页面  (这里的browser调用的方法就是  spider.browser )
 
+class JSPageMiddleware(object):
+    def process_request(self,request,spider):
+        if spider.name == "jobbole":
+			spider.brower.get(request.url)
+			import time 
+             time.sleep(3)
+             print("访问:{0}".format(request.url))
+			return HtmlResponse(url= spider.browser.current_url,body=spider.browser.page_source,encoding='utf-8',request=request)  
 
+    
+scrapy的信号：scrapy允许我们在__init__ 或者在任何地方都可以加入一个信号量
+jobbole.py页面：
+from scrapy.xlib.pydispatch import dispatcher
+from scrapy import signals
+from selenium import webdriver
+class JobboleSpider(scrapy.spider):
+    name = 'jobbole'
+      ......
+        
+	def __init__（self）:
+        self.brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')         super(JobboleSpider,self).__init__()
+        dispatcher.connect(self.spider_closed，signals.spider_closed)
+    def spider_closed(self,spider):
+        #当爬虫退出的时候，关闭chrome
+        print("spider closed")
+        self.browser.quit()
+        
+做一个信号的映射，当spider close的时候，我们需要做一些什么事情
+第一个参数为处理函数即 -- 当某个信号发生的时候，我们用什么函数来处理
+第二个参数为发送什么信号量 -- 系统提供了很多信号
+							 							（下面会详解信号）
+----------------------------------------------------------------------------
 
+异步方法： 需要自己重写一个dowmloader
+
+在github中搜索
+scrapy downloader
+搜索结果的第一个
+flisky/scrapy-phantomjs-downloader
 
 ```
 
+###    
 
+#### python提供的无界面环境，可以在
 
-scrapy给我们提供了下载图片的机制，需要在setting里面设置一个imagepipeline即可
+## 无界面的环境下运行chrome
 
 ```python
-'scrapy.pipelines.images.ImagesPipeline':1
-后面的数字越小就会越早处理这个pipeline
+第一步：pip install pyvirtualdisplay
 
-pipeline怎么知道去item中取哪个字段，所以这里需要配置
-IMAGES_URLS_FIELD = "字段名"
-配置完之后，image回去item里面去找这个字段进行下载，下载图片需要设置图片的保存路径
-设置路径需要写一个绝对路径，所以需要用os设置images的路径位置(设置图片下载的路径)
-import os
-project_dir = "os.path.abspath(os.path.dirname(__file__))"
-IMAGES_STORE= ps.path.join(project_dir,'images')
+from pyvirtualdisplay import Display
+# visible=0 不显示的意思 ,size=(800,600)设置大小
+display = Display(visible=0,size=(800,600))
+display.start()
+browser = webdriver.Chrome()
+browser.get()
+
+运行遇上程序的时候，可能会出现错误，需要执行下面的步骤
+sudo apt-get install xvfb
+pip install xvfbwrapper
 ```
 
 
 
-需要专门写一个图片处理的pipeline
+### 额外的还有的解决方案
+
+```python
+scrapy本身也给我们提供了一种解决方案，专门用来针对动态网站的
+叫做 scrapy splish
+相当于自己运行的一个server，通过http的请求方式，将我们的js拿去执行，性能比phantomjs
+chrome都要高，因为他是一个轻量级的，
+scrapy splish 好处是支持分布式的，因为他是运行在一个server是，可以针对这个server发起请求，但是稳定性没有chrome高
+### 但是更推荐chrome，稳定性比较高
+----------------------------------------------------------------------------
+selenium grid
+
+与scrapy splish类似，也是支持分布式的，也是启动一个服务，通过api的方式，向网站发起请求
+----------------------------------------------------------------------------
+splinter
+splinter 也是一种操控浏览器的解决方案，用法与selenium很像。
+```
+
+
+
+### scrapy爬虫的暂停与重启
+
+```markdown
+
+一个爬取到中间之后想要继续爬取， 继续执行与之前相同的命令
+
+** 启动的时候执行命令
+crawl spider lagou -s JOBDIR=job_info/001  
+
+要想做到暂停爬虫，就要保存很多中间状态
+比如没有做完的requests
+比如没有执行完的filter
+必须把这些状态都保存下来，才能做到重启与暂停
+也包括当前spider的状态，这些状态都必须有保存
+这些东西scrapy都已经帮我们做好了，我们需要做的就是提供一个目录，spider的信息会放到这个目录下面来
+
+** scrapy的暂停与重启，在官方文档中明确指明了，不同的spider不能共用同一个目录
+同一个spider在不同的run的时候，也不能用同一个目录
+（因为在次run会继续上一次的接着爬取，如果想换一个从新爬取就得换一个目录）
+
+scrapy接收结束爬虫的信号是ctrl+c 的命令
+
+linux下的信号 
+kill -f main.py
+kill -f -9 main.py  强制杀掉，如果用这个命令，无法接收到中断信号，在main文件里就做不到善后的工作
+
+所以需要crawl spider lagou -s JOBDIR=job_info/001  这个命令来运行，这样才能接收到ctrl+c 的信号
+
+--------------------------------------------------------------------------
+也可以在setting中设置
+JOBBDIR = "job_info/001"
+这样设置运行main文件的时候，也会将当前的信息，保存指定在目录之下
+
+--------------------------------------------------------------------------
+在spider页面设置
+custom_settings = {
+	JOBBDIR = "job_info/001"
+}
+
+--------------------------------------------------------------------------
+建议尽量在黑屏终端使用
+
+一个ctrl+c  会保存状态
+两个ctrl+c 会强制终止
+
+运行完会出现三个文件
+requests.seen
+   保存已经访问过得url
+spider.state
+   状态信息
+requests.queue
+	active.json
+	p0 --- 需要继续做完的request（当继续跑，跑完的时候p0是会被清除掉的）
+	
+重新启动 crawl spider lagou -s JOBDIR=job_info/001  
+   继续执行与之前相同的命令
+```
+
+
+
+### scrapy的url去重原理   ？
+
+```python
+
+
+
+
+```
+
+
+
+
+
+##  telnet
+
+```python
+让我们可以连接到远程的端口进行操作
+
+本身是不在localhost上监听的  可以设置远程监听
+
+在源码扩展部分
+```
+
+
+
+## spidermiddleware
+
+```markdown
+# 位于spider和engin之间的
+
+SPIDER_MIDDLEWARES = {
+   'manhuaspider.middlewares.ManhuaspiderSpiderMiddleware': 543,
+}
+
+默认的ManhuaspiderSpiderMiddleware  
+下面简述里面的比较重要的几个函数
+
+ > from_crawler 
+ 
+是会被middle_ware的manage调用的
+（ manage管控着我们的spidermiddleware 和 downloadermiddleware
+只要写middleware都可以重载from_crawler这个函数 ）
+调用这个函数时会发送一个信号， 他有一个处理函数spider_opened 
+通过代码可以看出这个函数只是记录了一个日志
+
+** 下面四个函数是spiddermiddleware里面可以重载的四个函数：
+
+> process_spider_input(response,spider):
+
+engin拿到response之后，会发送给spiders 可以在这里加上处理逻辑
+    
+> process_spider_output(response,result,spider):
+
+spiders解析到request之后，会发送给engin时 可以在这里加上处理逻辑
+这个函数里面的逻辑就是有了result之后，yield出去交给engin
+
+> process_spider_exception(response,exception,spider):
+
+当我们call了一个spider，或者调用了这个process_spider_input这个函数raise了exception，就会进入这个函数，可以在这里加入自己想要的逻辑
+
+> process_start_requests(start_requests,spider):
+
+当我们开启了一个start_request的时候就会被调用，与process_spider_output函数类似，不同的是这个函数只能return requests不能return items
+
+```
+
+### spidermiddleware的源码分析
+
+```python
+一、depth       在process_spider_output的时候处理
+可以监控我们可以爬到多少层，可以在这里设置我们可以爬多少层
+
+会从这部分开始执行：
+
+	if self.stats and 'depth' not in response.meta:
+		response.meta['depth'] = 0
+   		if self.verbose_stats:
+			self.stats.inc_value('request_depth_count/0', spider=spider)
+	return (r for r in result or () if _filter(r))
+
+解析：
+stats 是指状态收集变量，会记录spider很多中间状态
+会判断depth有没有在meta里面 如果没有设置depth为0，如果有会把这个值加1
+处理完之后会return，调用_filter方法，这个函数里面会有爬取最大深度的逻辑控制
+
+
+二、httperror   在process_spider_input的时候处理
+帮我们过滤掉一些返回状态不为200的response
+当我们yield request的时候，设置一些参数可以使用
+例如：
+1、
+yield Request(url=parse.urljoin(response.url, post_url), meta={'handle_httpstatus_all':True}, callback=self.parse)
+ 
+meta={'handle_httpstatus_all':True}设置了这个之后，当他进入httperror的时候
+这个meta会在response，有了这个值，他就不会对我们的状态码进行过滤了，所以即使是404也会帮我们返回过去
+2、
+yield Request(url=parse.urljoin(response.url, post_url), meta={'handle_httpstatus_list':[404,500,301]},callback=self.parse)
+
+ meta={'handle_httpstatus_list':[404,500,301]}设置了这个之后，在httperror里面就会进入allowed_status,下面的判断语句会显示，如果你的状态码在这个里面，就会返回到spider里面让你自己去处理
+
+3、
+在jobbole.py文件中设置
+handle_httpstatus_list= [404]
+
+def parse(self,response):
+    ........
+    
+这样的效果如同2，不过这样的优先级就不如2了
+
+```
+
+### scrapy中的状态数据收集
+
+```python
+scrapy提供了方便的收集数据的机制，数据以key/value方式存储，也就是dict
+
+例子： 
+需求、收集伯乐在线的所有404url以及404页面数
+
+spider默认情况下只会处理状态为200到300之间的页面
+为了将404可以进行统计需要设置
+
+
+handle_httpstatus_list= [404]
+#所有404url以及404页面数 设置保存这两个数据的变量
+def __init__(self):
+    #用来保存所有404的页面
+    self.fail_urls=[]
+    dispatcher.connect(self.handle_spider_closed, signals.spider_closed)
+def parse(self,response):
+    if response.status == 404:
+        self.fail_urls.append(response.url)
+        self.crawler.stats.inc_value("failed_url")
+
+
+
+```
+
+
+
+### scrapy的信号和扩展
+
+
+
+信号是中间件扩展之间的桥梁
+
+```python
+延迟的信号处理器（Deferred signal handlers）
+
+spider_opened  当spider开始爬取的时候，会发生这个信号，如果需要记录开始爬取的时间，可以捕捉这个信号，捕捉到这个信号之后，得到了开始爬取的时间们可以放到数据收集器当中
+
+spider_idle   当spider空闲的时候，这个信号就开始发送
+			 rsquests正则等待被下载的时候
+			 request被调度的时候
+			 items正在 itempipeline中被处理的时候
+		 当改信号所有处理器被调用后，如果spider仍然保持空闲状态，引擎将会关闭该spider，当spider被关闭后，spider_close信号将会被发送
+        
+spider_error  当回调函数产生错误的时候，改信号被发送
+
+.......
+
+jobbole.py
+
+def __init__(self):
+    #用来保存所有404的页面
+    self.fail_urls=[]
+def handle_spider_closed(self):
+    self.crawler.stats.set_value("failed_urls",",")
+    
+def parse(self,response):
+    if response.status == 404:
+        self.fail_urls.append(response.url)
+        self.crawler.stats.inc_value("failed_url")
+
+```
+
+### 如何开发scrapy的扩展
+
+> scrapy和扩展的区别：  中间件都是缩减版的扩展
+>
+> 实际上中间件都是扩展
+>
+> pipeline manage
+>
+> middleware里面的中间件都是和信号量进行绑定的
+>
+> 整个extension的机制是通过信号量来处理的
+
+
+
+downloader中间件能够重载的几个函数
+
+- process_request(request,spider)
+- process_response(request,response,spider)
+- process_exception(request,exception,spider)
+
+spider中间件能够重载的几个函数
+
++ process_spider_input(response,spider)
++ process_spider_output(response,result,spider)
++ process_spider_exception(response,exception,spider)
++ process_start_requests(start_requests,spider)
+
+
+
+```python
+分析scrapy内部提供的一个extension
+
+throttle.py  是限速的
+telnet.py    
+
+corestats.py  记录了spider一些比较重要的统计信息
+
+
+
+```
+
+
+
+
+
+
+
+
+
+### scrapy redis的分布式爬虫以及源码解析
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
