@@ -255,18 +255,23 @@ START_URLS_AS_SET = False
 
 
 
+def request_seen(self,request):
+   fp = self.request_fingerprint(request)
+        # This returns the number of values added, zero if already exists.
+        added = self.server.sadd(self.key, fp)
+        #sadd 是set的add  key是名称   fp就是request的指纹，加到key里面，如果成功就会返回1，如果失败就会返回0  
+        return added == 0
+		#  返回0 的话就代表入库失败，入库失败了就代表已经存在了，
+         # 也就是request_seen等于true了
 
 
-
-
-
-
+ 
 ```
 
 ### picklecompat.py (兼融py2，py3)
 
 ```python
-
+掉用了pickle
 
 ```
 
@@ -274,38 +279,269 @@ START_URLS_AS_SET = False
 
 ```python
 需要在setting中保存一个pipeline
+# 这个过程是没有必要将这个过程放到redis中，可以在本地downloader之后，可以通过本地的pipeline将他保存下来，这样既下载了这个url，又将这个url的数据解析完成之后，保存到我们的数据库中，所以这里的pipeline可以不设置，不设置的话在本地做保存即可，设置的话可以将item放到我们的redis中，可以完成共享 
 
+（好处）放到redis中，我就可以多启几个进程，甚至可以只写一段代码，不需要爬虫，写一段从redis里面取数据的python文件，然后不停的入库即可
+
+
+
+    @classmethod
+    def from_settings(cls, settings):
+        params = {
+            #首先会调用这个函数from_settings---也就是get_redis_from_settings这个函数
+            #这个函数会初始化 redis-server
+            'server': connection.from_settings(settings),
+        }
+        if settings.get('REDIS_ITEMS_KEY'):
+            params['key'] = settings['REDIS_ITEMS_KEY']
+        if settings.get('REDIS_ITEMS_SERIALIZER'):
+            params['serialize_func'] = load_object(
+                settings['REDIS_ITEMS_SERIALIZER']
+            )
+
+        return cls(**params)
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls.from_settings(crawler.settings)
+
+    def process_item(self, item, spider):
+        #deferToThread 异步的对象  这里的意思是将process_item这个函数传到_process_item里面去做，而且_process_item是异步化的，放到线程中去做
+        return deferToThread(self._process_item, item, spider)
+#这里没有直接把_process_item的逻辑拷贝到process_item里面，是为了效率更高，放到线程中去做，后面源源不断来的item就不会受影响
+    
+    def _process_item(self, item, spider):
+        key = self.item_key(item, spider)
+        data = self.serialize(item)
+        self.server.rpush(key, data)
+        return item
+    #        self.server.rpush(key, data) 因为item需要顺序的处理，所以这里调用了对列rpush是放到对列的对尾
 
 ```
 
 ### queue.py （供（scheduler）request的调度来使用的）
 
 ```python
+# 有三种queue   FifoQueue    PriorityQueue     LifoQueue
 class FifoQueue(Base):	
-#FifoQueue 是first in  first out  指先进先出的队列（有序队列）放在队尾
+#FifoQueue 是first in  first out  指先进先出的队列（有序队列）后进来的放在队尾
 
-
+#代码中，进来的时候 lpush 放在对头
+	   #取数据的时候 rpop  从队尾取
+	def push(self,request):
+        # push的时候，将request放到server里面
+        #_encode_request 是指将request做encode
+        self.server.lpush(self.key, self._encode_request(request))
+        
+       """
+        def _encode_request(self, request):
+        '''Encode a request object'''
+        	obj = request_to_dict(request, self.spider)
+        	return self.serializer.dumps(obj)
+        	
+       _encode_request 调用的是 serializer  调用的是picklecompat
+       """
+        
+        
+        
+class PriorityQueue(Base):	
+# 调用的是zcard  有序集合
+    def push(self, request):
+        data = self._encode_request(request)
+        score = -request.priority    # 这里是设置的优先级的 
+        # priority  生成一个request的时候，可以赋值的，这个值越大越优先爬取
+        self.server.execute_command('ZADD', self.key, score, data)
+'''
+push 的时候调用的是server.execute_command('ZADD',self.key,score,data )
+score 是分数
+'''    
+ 	def pop(self, timeout=0):
+        """
+		zrange(self.key, 0, 0) 这里就是取第一个数的意思
+        """
+        pipe = self.server.pipeline()
+        pipe.multi()
+        pipe.zrange(self.key, 0, 0).zremrangebyrank(self.key, 0, 0)
+        results, count = pipe.execute()
+        if results:
+            return self._decode_request(results[0])
+        
     
-```
-
-
+class LifoQueue(Base):	
+# 后进先出
 
 ```
 
 ### scheduler.py
 
 ```python
+在spider里面yield一个request之后，就会调用enqueue_request这个函数
+
+### scrapy的 scheduler.py 的源码
+def enqueue_request(self, request):
+        if not request.dont_filter and self.df.request_seen(request):
+            self.df.log(request, self.spider)
+            return False
+        dqok = self._dqpush(request)
+ '''
+ _dqpush :  拿到request之后会push request
+ 
+ '''       
+        
+        if dqok:
+            self.stats.inc_value('scheduler/enqueued/disk', spider=self.spider)
+        else:
+            self._mqpush(request)
+            self.stats.inc_value('scheduler/enqueued/memory', spider=self.spider)
+        self.stats.inc_value('scheduler/enqueued', spider=self.spider)
+        return True
+
+def next_request(self):
+        request = self.mqs.pop()
+        if request:
+            self.stats.inc_value('scheduler/dequeued/memory', spider=self.spider)
+        else:
+            request = self._dqpop()
+            if request:
+                self.stats.inc_value('scheduler/dequeued/disk', spider=self.spider)
+        if request:
+            self.stats.inc_value('scheduler/dequeued', spider=self.spider)
+        return request
 
 
+
+### scrapy-redis 的 scheduler.py 的源码
+
+# from_settings 做为一个入口
+def from_settings
 
 
 ```
 
+### spiders.py
+
+```python
+class RedisMixin(object):
+    redis_key = None
+    redis_batch_size = None
+    redis_encoding = None
+    server = None
+
+    def start_requests(self):
+        """这里重载了start_requests这个方法  就可以调用自己的next_requests """
+        return self.next_requests()
+
+    def setup_redis(self, crawler=None):
+        """Setup redis connection and idle signal.
+
+        This should be called after the spider has set its crawler object.
+        """
+        if self.server is not None:
+            return
+
+        if crawler is None:
+            # We allow optional crawler argument to keep backwards
+            # compatibility.
+            # XXX: Raise a deprecation warning.
+            crawler = getattr(self, 'crawler', None)
+
+        if crawler is None:
+            raise ValueError("crawler is required")
+
+        settings = crawler.settings
+
+        if self.redis_key is None:
+            self.redis_key = settings.get(
+                'REDIS_START_URLS_KEY', defaults.START_URLS_KEY,
+            )
+
+        self.redis_key = self.redis_key % {'name': self.name}
+
+        if not self.redis_key.strip():
+            raise ValueError("redis_key must not be empty")
+
+        if self.redis_batch_size is None:
+            # TODO: Deprecate this setting (REDIS_START_URLS_BATCH_SIZE).
+            self.redis_batch_size = settings.getint(
+                'REDIS_START_URLS_BATCH_SIZE',
+                settings.getint('CONCURRENT_REQUESTS'),
+            )
+
+        try:
+            self.redis_batch_size = int(self.redis_batch_size)
+        except (TypeError, ValueError):
+            raise ValueError("redis_batch_size must be an integer")
+
+        if self.redis_encoding is None:
+            self.redis_encoding = settings.get('REDIS_ENCODING', defaults.REDIS_ENCODING)
+
+        self.logger.info("Reading start URLs from redis key '%(redis_key)s' "
+                         "(batch size: %(redis_batch_size)s, encoding: %(redis_encoding)s",
+                         self.__dict__)
+
+        self.server = connection.from_settings(crawler.settings)
+        # The idle signal is called when the spider has no requests left,
+        # that's when we will schedule new requests from redis queue
+        crawler.signals.connect(self.spider_idle, signal=signals.spider_idle)
+
+    def next_requests(self):
+        """允许我们获取首个 start_url的时候 是通过redis获取的 ，而不是schedule（最初的时			候schedule是没有数据的 ）
+        """
+        use_set = self.settings.getbool('REDIS_START_URLS_AS_SET', defaults.START_URLS_AS_SET)
+        fetch_one = self.server.spop if use_set else self.server.lpop
+        # XXX: Do we need to use a timeout here?
+        found = 0
+        # TODO: Use redis pipeline execution.
+        while found < self.redis_batch_size:
+            data = fetch_one(self.redis_key)
+            if not data:
+                # Queue empty.
+                break
+            req = self.make_request_from_data(data)
+            if req:
+                yield req
+                found += 1
+            else:
+                self.logger.debug("Request not made from data: %r", data)
+
+        if found:
+            self.logger.debug("Read %s requests from '%s'", found, self.redis_key)
+
+    def make_request_from_data(self, data):
+        """
+
+        """
+        url = bytes_to_str(data, self.redis_encoding)
+        return self.make_requests_from_url(url)
+
+    def schedule_next_requests(self):
+        """Schedules a request if available"""
+        # TODO: While there is capacity, schedule a batch of redis requests.
+        for req in self.next_requests():
+            self.crawler.engine.crawl(req, spider=self)
+
+    def spider_idle(self):
+        """Schedules a request if available, otherwise waits."""
+        # XXX: Handle a sentinel to close the spider.
+        self.schedule_next_requests()
+        raise DontCloseSpider
+
+        
+class RedisCrawlSpider(RedisMixin, CrawlSpider):
+"""
+基于CrawlSpider的spider
+"""
+```
+
+### utils.py
+
+```python
+为了兼容py2 和 py3 写得
+```
 
 
 
-
-
+### 如何将   集成到scrapy-redis中
 
 
 
