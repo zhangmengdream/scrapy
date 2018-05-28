@@ -771,45 +771,30 @@ VALUES 是会从后面的参数中取值的
 
 解决方法：随时更换我们的User-Agent
 
- 
+```python
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
 
 
 
 解决方法：反爬中会介绍
 
 防止爬虫被禁止的章节中，介绍验证码破解
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -935,6 +920,7 @@ selenium实际上是操控浏览器的，中间是有一个drive的
 每个浏览器有对应的drive
 
 selenium只是一个接口，他调用的还是一个浏览器，所以需要用浏览器的drive来完成
+下载driver的网址：
 
 
 代码：
@@ -968,6 +954,31 @@ browser.find_element_by_css_selector(".Login-content input[name='password']").se
 browser.find_element_by_css_selector(".Login-content button.SignFlow-submitButton").click()
 
 ```
+
+##### 通过selenium模拟登陆拉钩
+
+```python
+from selenium import webdriver
+from scrapy.selector import Selector
+
+browser = webdriver.Firefox(executable_path = '/home/test/Desktop/geckodriver')
+browser.get('https://passport.lagou.com/login/login.html?ts=1527481191047&serviceId=lagou&service=https%253A%252F%252Fwww.lagou.com%252F&action=login&signature=F24C82E954D4F57DAB08A96F7E6415B2')
+browser.find_element_by_css_selector("div[data-view='passwordLogin'] .active div[data-propertyname='username'] input").send_keys('13426039389')
+browser.find_element_by_css_selector("div[data-view='passwordLogin'] .active div[data-propertyname='password'] input").send_keys('zhangmengjie123')
+browser.find_element_by_css_selector("div[data-view='passwordLogin'] .active div[data-propertyname='submit'] input").click()
+
+#获取拉钩内部网页的一些数据
+browser.get('https://www.lagou.com/jobs/list_python?labelWords=&fromSearch=true&suginput=')
+text=browser.page_source
+t_selector = Selector(text=text)
+#通过css匹配出具体的值
+print(t_selector.xpath("//div[@class='list_item_bot']/div[@class='li_b_r']/text()").extract())
+
+？？？为什么这里却获取不到值？？？
+print(t_selector)
+```
+
+
 
 ##### 设置不加载图片有chromedriver （用里面的prefs参数） --- 好处节省时间，加快加载速度 ---  chromedriver里面还有很多设置，自己研究
 
@@ -1014,7 +1025,7 @@ from scrapy.http import HtmlResponse
 class JSPageMiddleware(object):
     # 通过chrome请求动态网页
     def process_request(self,request,spider):
-        if spider == "jobbole":
+        if spider.name == "jobbole":
 			brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')
 			brower.get(request.url)
 			import time 
