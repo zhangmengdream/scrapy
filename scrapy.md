@@ -576,7 +576,7 @@ scrapy的itemloader机制，可以让我们的维护工作变得更加简单
 itemloader提供的是一个容器，可以配置item提供的某一个字段需要那种规则来解析
 
 ```markdown
-from scraoy.loader import ItemLoader
+from scrapy.loader import ItemLoader
 #通过itemloader加载item
 itemloader = ItemLoader(item=ManhuaItem(),response=response)
 itemloader.add_xpath('title','//div[@class="banner_detail_form"]/div[2]/p[1]/text()')
@@ -784,14 +784,6 @@ VALUES 是会从后面的参数中取值的
 
 
 
-
-
-
-
-
-
-
-
 解决方法：反爬中会介绍
 
 防止爬虫被禁止的章节中，介绍验证码破解
@@ -920,8 +912,10 @@ selenium实际上是操控浏览器的，中间是有一个drive的
 每个浏览器有对应的drive
 
 selenium只是一个接口，他调用的还是一个浏览器，所以需要用浏览器的drive来完成
-下载driver的网址：
 
+下载driver的网址：http://selenium-python.readthedocs.io/installation.html#drivers
+
+browser.page_source就是js加载之后生成的html页面的内容
 
 代码：
 from selenium import webdriver
@@ -974,8 +968,8 @@ t_selector = Selector(text=text)
 #通过css匹配出具体的值
 print(t_selector.xpath("//div[@class='list_item_bot']/div[@class='li_b_r']/text()").extract())
 
-？？？为什么这里却获取不到值？？？
-print(t_selector)
+# 页面的值都在text里面
+print(text)
 ```
 
 
