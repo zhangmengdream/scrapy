@@ -682,7 +682,7 @@ def login(self,response):
             'phone_num':18715529161,
             'password':'zhangmeng',
         }
-        # FormRequest 开启模拟登陆
+        # FormRequest 开启模拟登陆   FromRequest可以完成一个post表单提交
         return [scrapy.FormRequest(
             	url =post_url,
                 formdata = post_data,
@@ -782,13 +782,462 @@ VALUES 是会从后面的参数中取值的
 
 
 
+### 爬虫和反爬虫
+
+```python
+基本概念：
+爬虫：字段获取网站数据的程序，关键是批量的获取，（定时或者定量不停的获取）
+
+反爬虫：使用技术手段防止爬虫程序的方法
+
+误伤：反爬虫技术将普通用户识别为爬虫，如果误伤过高，效果再好也不能用（因为网站开发的目的就是让用户用）
+
+1.禁止ip效果最好，但是误伤最高，比如学习，或者网吧，对外的ip只有一个。
+如果学校的一个学生写了爬虫，这个ip被禁止了，那么这个学校的学生都上不了网了
+
+2.ip其实是一个动态的ip
+
+网站一般会使用在某一段时间内禁止你的访问
+
+成本：需要人力和机器成本
+
+拦截：成功拦截爬虫，一般拦截率越高，误伤率越高
+```
+
 
 
 解决方法：反爬中会介绍
 
 防止爬虫被禁止的章节中，介绍验证码破解
 
+### 反爬虫的目的
 
+```poy
+初级爬虫： 简单粗暴，不管服务器压力，容易弄挂网站
+
+数据保护：
+
+失控的爬虫
+
+商业竞争对手
+```
+
+
+
+### 爬虫和反爬虫的对抗过程
+
+```python
+
+网站监测，处理ip和useragent之外，还有cookie，网站会给某一个用户设置cookie的sessionid，不管是登陆还是没有登陆都会设置，用来表示用户登录的地址，所以还可以禁用cookie，我们不把cookie返回回去，网站就无法根据cookie来判断了
+
+ 
+
+```
+
+![52801517325](C:\Users\dream\AppData\Local\Temp\1528015173255.png)
+
+
+
+### scrapy源码大致了解
+
+```python
+commands  关于命令的
+contracts 关于测试的
+.......
+
+```
+
+### http.Response  参数：
+
+```python
+url
+headers
+status
+body
+meta
+flags
+copy
+repalce
+```
+
+
+
+### http.Request 参数：
+
+```python
+根据不同的错误打印不同的日志文件
+
+priority=0  的用途
+
+url
+callback
+method
+meta
+body
+headers
+cookies  可以是dict，也可以是list
+encoding
+dont_filter
+errback
+```
+
+downloader_middleware里面有cookie里面有cookiemiddleware
+
+里面有一个cookiejar 
+
+从request.meta中取到的，把cookie放到header中
+
+
+
+
+
+### 设置随机切换useragent
+
+setting中可以设置dowm_middleware
+
+scrapy本身提供了scrapy的 useragent_middleware
+
+useragent.py 源码
+
+```python
+"""Set User-Agent header per spider or use a default value from settings"""
+
+from scrapy import signals
+
+
+class UserAgentMiddleware(object):
+    """This middleware allows spiders to override the user_agent"""
+
+    def __init__(self, user_agent='Scrapy'):
+        self.user_agent = user_agent
+----------------------------------------------------------------------------
+# 这一步的意思是默认user_agent 为scrapy 这样很容易会被检测出来，所以我们需要在setting里面设置user_agent 来给他替换掉
+setting.py中
+user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36'
+---------------------------------------------------------------------------
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        o = cls(crawler.settings['USER_AGENT'])
+        crawler.signals.connect(o.spider_opened, signal=signals.spider_opened)
+        return o
+
+    def spider_opened(self, spider):
+        self.user_agent = getattr(spider, 'user_agent', self.user_agent)
+
+    def process_request(self, request, spider):
+        if self.user_agent:
+            request.headers.setdefault(b'User-Agent', self.user_agent)
+---------------------------------------------------------------------------
+process_request这个方法很重要
+---------------------------------------------------------------------------
+
+            
+分析：
+from_crawler这个方法把crawler传递进来
+
+user_agent middle，默认的在setting里面设置为none，自己重载一个middleware
+---------------------------------------------------------------------------
+做法：在middleware里面写一个函数  然后把这个mioddleware配置到setting中即可
+from fake-useragent import UserAgent
+class RandomUserAgentMiddle(object):
+    # 随机更换user_agent
+    def __init__(self,crawler)
+    	super(RamdoonUserAgentMiddleware,self).__init__()
+    	self.ua=useragent()
+    	self.ua_type=crawler.settings.get('RANDOM_UA_TYPE','random')
+        # 这个是在setting里面设置的  没有设置默认为random  也就是可以自定义请求头的浏览器类型
+    @classmethod
+    def from_crawler(self,crawler)
+		return cls(crawler)
+    
+    def process_request(self,request,spider):
+        def get_ua():
+            return getattr(self.ua,self.ua_type)  
+        # 函数内写函数，实现了一种闭包的特性
+        # getattr这个函数有三个参数 （object，str，【default】）  
+        # 这里的意思是 ua类的 ua_type的值
+        request.headers.setdefault('User-Agent',get_ua())
+            
+
+            
+setting.py
+
+在setting里面设置，可以设置随机选择那个浏览器的useragent（这样就把这个插件变成了一个可配置的）
+RANDOM_UA_TYPE='random'
+
+---------------------------------------------------------------------------
+pip install fake-useragent
+
+from fake-useragent import useragent
+ua=useragent
+ua.random  
+这样会在不同的浏览器之间随机的切换useragent
+            
+```
+
+### 设置随机更换ip
+
+```python
+大部分的网络地址都是动态分配的
+
+用自己的IP的时候尽量控制爬去速度，尽量不要让自己的ip被禁止掉，因为本机IP爬起速度才是最好的
+
+设置ip代理
+原理： 爬去网站的时候，网站是可以获取你的ip地址的，它可以对你的ip进行统计，然后把你的iP
+禁掉，所以就有了ip代理的模式。我们的浏览器就不直接向服务器发起请求了，而是想代理服务器发起请求，通过代理服务器请求网站，然后把数据返回给代理服务器，代理服务器，再把数据返回给我们。
+这样的话我们的本机ip就是和代理服务器进行交互的了，服务器就不知道我们本机的IP了，这样我们就不会把我们的ip暴漏出去了
+
+
+
+设置：
+上面写的useragent插件，会设置每一个request
+request.meta['proxy']='http：//ip/端口'
+
+高匿代理： 服务器有时候会把我们的ip带到代理服务器，这样网站有可能会获取我们的ip，高匿代理就是完全不会把我们的ip带获取，让网站无从知道我们的ip
+-------------------------------------------------------------------------
+设置ip代理池：
+自己写一个爬虫，爬取免费代理ip网站的ip，放到数据库中，这样就有了ip代理的数据源
+crawl_xi_ip.py
+
+import requests
+from scrapy.selector import Selector
+import MySQLDb
+
+conn=MySQLDb.connect(host='localhost',user='root',passwd='123456',db='xici_ip',charset='utf-8')
+cursor=conn.cursor()
+
+def crawl_ips():
+    headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36"}
+    re = requests.get('http://www.xicidaili.com/nn/',headers=headers)
+    '''
+    scrapy的response的css和xpath方法，把selector包装进去了，所以不需要设置selector
+    在requests中需要设置调用selector来提取页面信息
+    '''
+    selector = Selector(text=re.text)
+    all_trs=selector.css('#ip_list tr')
+    for te in all_trs[1:]:
+        speed_str = tr.css(".bar::attr(title)").extract()[0]
+        if speed_str:
+            speed = float(speed_Str.split("秒")[0])
+        all_texts=te.css('td::text').extract()
+        ip = all_texts[0]
+        port = all_texts[1]
+        proxy_type = all_texts[5]
+        ip_list.append((ip,port,proxy_type,speed))
+    for ip_info in ip_list:
+        cursor.execute(
+        	"insert proxy_ip(ip,port,proxy_type,speed) VALUE('{0}','{1}',{2},'HTTP').format(ip_info[0],ip_info[1],ip_info[2],ip_info[3],)"
+        )
+        conn.commit()
+        
+        
+#从数据库中取出来
+class GetIP(object):
+    def delete_ip(self,ip):
+        delete_sql='''
+        delete from proxy_ip where ip="{0}"
+        '''.format(self.ip)
+        cursor.execute(delete_sql)
+        conn.commit()
+        return True
+    #判断ip是否可用
+    def judge_ip(self,ip,port):
+        http_url='http://www.baidu.com'
+        proxy_url = "https://{0}:{1}".format(ip,port)
+        try:
+            proxy_dict={
+                'http'：proxy_url,
+            }
+            requests.get(http_url,proxies=proxy_dict)
+        except Exception as e:
+            print('invalid ip and port')
+            self.delete_ip(ip)
+            return False
+        else:
+            code=response.status_code
+            if code >=200 and code <=300:
+            	print('')
+                return True
+            else:
+                print('invalid ip and port')
+                self.delete_ip(ip)
+                return False
+            
+    def get_random_ip(self):
+        #这个sql语句可以有随机取出ip的作用
+        random_sql='''
+        SELECT ip,port FROM proxy_ip
+        ORDER BY RAND()
+        LIMIT 1
+        '''
+        result = cursor.execute(random_sql)
+        for ip_info in cursor.fetchall():
+            ip = ip_info[0]
+            prot = ip_info[1]
+            judge_re = self.judge_ip(ip,port)
+            # 如果提取成功，就返回ip，如果不成功就继续提取
+            if judge_re:
+                return "http://{0}:{1}".format(ip,port)
+        	else:
+                return self.get_random_ip()
+if __name__='__main__'
+    get_ip=GetIP()
+    get_ip.get_random_ip()
+        
+    
+在middleware.py 中，写一个ip代理的middleware，动态设置ip代理,在setting中开启
+class RamdomProxyMiddleware(object):
+    def process_request(self,request,spider):
+        get_ip = GetIP()
+        request.meta['proxy']=get_ip.get_random_ip()
+        
+-----------------------------------------------------------------------
+在git中搜索scrapy-proxies
+aivarsk/scrapy-proxies这个文件里面定义了scrapy的middleware
+这里面可以改造成自己需要的版本，很好用的
+https://github.com/aivarsk/scrapy-proxies
+-----------------------------------------------------------------------
+scrapy官网给我们提供的比较可靠的工具 (需要收费)
+
+github里面有这个项目scrapy crawlera
+这个会让我们动态ip代理的配置更加简单
+pip install scrapy_crawlera
+-----------------------------------------------------------------------
+tor洋葱浏览器
+比较安全，稳定
+
+```
+
+### 
+
+```python
+
+```
+
+### 通过云打码的方式实现验证码
+
+```python
+1.编码实现(tesseract-ocr)
+
+2.在线打码--依靠代码识别技术--云打码
+
+3.人工打码--超速打码平台
+	
+使用云打码：
+1.登陆
+2.查询余额
+3.识别
+-----------------------------------------------------------------------
+云打码接口代码：
+import json
+import requests
+
+class YDMHttp(object):
+    apiurl = 'http://api.yundama.com/api.php'
+    username = ''
+    password = ''
+    appid = ''
+    appkey = ''
+
+    def __init__(self, username, password, appid, appkey):
+        self.username = username
+        self.password = password
+        self.appid = str(appid)
+        self.appkey = appkey
+
+    def balance(self):
+        data = {'method': 'balance', 'username': self.username, 'password': self.password, 'appid': self.appid, 'appkey': self.appkey}
+        response_data = requests.post(self.apiurl, data=data)
+        ret_data = json.loads(response_data.text)
+        if ret_data["ret"] == 0:
+            print ("获取剩余积分", ret_data["balance"])
+            return ret_data["balance"]
+        else:
+            return None
+
+    def login(self):
+        data = {'method': 'login', 'username': self.username, 'password': self.password, 'appid': self.appid, 'appkey': self.appkey}
+        response_data = requests.post(self.apiurl, data=data)
+        ret_data = json.loads(response_data.text)
+        if ret_data["ret"] == 0:
+            print ("登录成功", ret_data["uid"])
+            return ret_data["uid"]
+        else:
+            return None
+
+    def decode(self, filename, codetype, timeout):
+        data = {'method': 'upload', 'username': self.username, 'password': self.password, 'appid': self.appid, 'appkey': self.appkey, 'codetype': str(codetype), 'timeout': str(timeout)}
+        files = {'file': open(filename, 'rb')}
+        response_data = requests.post(self.apiurl, files=files, data=data)
+        ret_data = json.loads(response_data.text)
+        if ret_data["ret"] == 0:
+            print ("识别成功", ret_data["text"])
+            return ret_data["text"]
+        else:
+            return None
+
+if __name__ == "__main__":
+    # 用户名
+    username = 'da_ge_da1'
+    # 密码
+    password = 'da_ge_da'
+    # 软件ＩＤ，开发者分成必要参数。登录开发者后台【我的软件】获得！
+    appid = 3129
+    # 软件密钥，开发者分成必要参数。登录开发者后台【我的软件】获得！
+    appkey = '40d5ad41c047179fc797631e3b9c3025'
+    # 图片文件
+    filename = 'getimage.jpg'
+    # 验证码类型，# 例：1004表示4位字母数字，不同类型收费不同。请准确填写，否则影响识别率。在此查询所有类型 http://www.yundama.com/price.html
+    codetype = 1004
+    # 超时时间，秒
+    timeout = 60
+    # 检查
+    if (username == 'username'):
+        print ('请设置好相关参数再测试')
+    else:
+        # 初始化
+        yundama = YDMHttp(username, password, appid, appkey)
+
+        # 登陆云打码
+        uid = yundama.login();
+        print ('uid: %s' % uid)
+
+        # 查询余额
+        balance = yundama.balance();
+        print ('balance: %s' % balance)
+
+        # 开始识别，图片路径，验证码类型ID，超时时间（秒），识别结果
+        text = yundama.decode(filename, codetype, timeout);
+
+----------------------------------------------------------------------------
+人工打码与云打码调用接口类似，都是通过http接口来完成的
+
+```
+
+### 如何禁用scrapy的cookie
+
+```python
+有的网站会根据我们的cookie来判断我们是否是爬虫
+将cookie禁掉，他就无法对我们的cookie进行跟踪，特别是不需要登陆就就可以访问的网站，禁用cookie就很重要了
+
+在setting.py中可以设置是否禁用cookie
+
+COOKIES_ENABLED=True
+
+```
+
+### 限速
+
+```python
+scrapy默认在每个页面下载之间的空隙是0
+默认遇到页面就直接下载了
+
+scrapy为我们提供了扩展，可以让我们设置下载的速度
+自动限速扩展
+(官方文档中有具体设置)
+DOWMLOAD_DELAY=10
+```
 
 
 
@@ -796,7 +1245,7 @@ VALUES 是会从后面的参数中取值的
 
 start_url  有多个值的时候，选择哪一个来开始调用爬取的 ？？？？
 
-DLL ？？？
+DLL ：windows下的动态链接库文件，有了这个文件我们在可以直接在本地使用
 
 
 
@@ -843,20 +1292,7 @@ class MySpider(scrapy.Spider):
 
 开发者账号：是和云打码合作的一种开发者，
 
-
-
-
 ```
-
-
-
-三、人工打码 -- 人在识别
-
-
-
-
-
-
 
 
 
@@ -885,26 +1321,28 @@ autothrottle_enabled
 
 ```
 
- 如何给不同的spider设置不同的setting
+####  如何给不同的spider设置不同的setting
 
 ```python
-在spider里面设置 --  就是设置自己的setting  比如这里是设置自己的禁用cookie为True
+在spider里面设置 --  就是设置自己的setting  比如这里是设置自己的禁用cookie为False
+request就不会把cookie给带过去了
     custom_settings={
         "COOKIES_ENABLED":True
     }
 
-
+对需要登陆才能访问的网站，不能禁用cookie，否则会访问不成功，这样的话，就需要在不同的spider里面设置不同的setting了
 ```
 
+### 
 
-
-## scrapy的进阶开发
+## scrapy的进阶开发   
 
 ##### scrapy的动态网站抓取
 
 ```python
 Selenium 自动化测试框架
 selenium的核心，是使用JavaScript操控浏览器
+需要安装  pip install selenuim
 
 selenium支持分布式的
 
@@ -931,7 +1369,7 @@ print(t_selector.css('.tb-promo-price .tb-rmb-num::text').extract())
 browser.close()
 ```
 
-##### 通过selenium来模拟登陆知乎
+##### 通过selenium来模拟登陆 知乎
 
 ```python
 from selenium import webdriver
@@ -949,7 +1387,7 @@ browser.find_element_by_css_selector(".Login-content button.SignFlow-submitButto
 
 ```
 
-##### 通过selenium模拟登陆拉钩
+##### 通过selenium模拟登陆 拉钩
 
 ```python
 from selenium import webdriver
@@ -972,7 +1410,45 @@ print(t_selector.xpath("//div[@class='list_item_bot']/div[@class='li_b_r']/text(
 print(text)
 ```
 
+### selenium完成微博模拟登陆
 
+```python
+from selenium import webdriver
+from scrapy.selector import Selector
+
+browser = webdriver.Firefox(executable_path = '/home/test/Desktop/geckodriver')
+browser.get('https://www.weibo.com')
+
+import time
+time.sleep(15)
+
+browser.find_element_by_css_selector("#loginname").send_keys('13426039389')
+browser.find_element_by_css_selector(".info_list.password input[node-type='password']'] input").send_keys('zhangmengjie123')
+browser.find_element_by_css_selector("a[node-type='submitBtn']").click()
+
+
+页面在加载的时候，页面还没有加载完就已经跳到登录步骤进行操作了
+所以需要sleep几秒钟，来延迟时间
+```
+
+### 通过selenium完成鼠标下拉操作
+
+```python
+browser可以执行我们的javascript代码的，也就是可以控制我们的鼠标对浏览器进行下拉操作（）
+from selenium import webdriver
+from scrapy.selector import Selector
+
+browser = webdriver.Firefox(executable_path = '/home/test/Desktop/geckodriver')
+browser.get('https://www.weibo.com')
+
+for i in range(3):
+     browser.execute_script("window.scrollTo(0, document.body.scrollHeight); var lenOfPage=document.body.scrollHeight; return lenOfPage;")
+        #执行这段js代码就可以完成下拉操作，range 3代表下拉三次
+     time.sleep(3)
+t_selector = Selector(text=browser.page_source)
+print (t_selector.css(".tm-promo-price .tm-price::text").extract())
+
+```
 
 ##### 设置不加载图片有chromedriver （用里面的prefs参数） --- 好处节省时间，加快加载速度 ---  chromedriver里面还有很多设置，自己研究
 
@@ -993,11 +1469,14 @@ browser.get("https://www.taobao.com")
 
 步骤和chrom请求页面相同 ，不推荐， 
 
+多进程情况下phantomjs性能会下降很严重
+
 ```python
 browser = webdriver.PhantomJS(executable_path="")
 browser.get('')
 prine(browser.page_source)
 browser.quit()
+（phantomjs是一个看不见的浏览器，我们需要手动将其退出）
 ```
 
 linux等无界面的系统个中phantomjs的好处就可以体现出来了，，
@@ -1116,6 +1595,8 @@ flisky/scrapy-phantomjs-downloader
 
 ```python
 第一步：pip install pyvirtualdisplay
+
+在middleware中：
 
 from pyvirtualdisplay import Display
 # visible=0 不显示的意思 ,size=(800,600)设置大小
@@ -1261,6 +1742,7 @@ SPIDER_MIDDLEWARES = {
 通过代码可以看出这个函数只是记录了一个日志
 
 ** 下面四个函数是spiddermiddleware里面可以重载的四个函数：
+(根据自己的需要，填充下面的内容)
 
 > process_spider_input(response,spider):
 
@@ -1285,7 +1767,7 @@ spiders解析到request之后，会发送给engin时 可以在这里加上处理
 
 ```python
 一、depth       在process_spider_output的时候处理
-可以监控我们可以爬到多少层，可以在这里设置我们可以爬多少层
+可以监控我们可以爬到多少层，可以在这里设置我们可以爬多少层（设置爬取深度）
 
 会从这部分开始执行：
 
@@ -1317,6 +1799,7 @@ yield Request(url=parse.urljoin(response.url, post_url), meta={'handle_httpstatu
  meta={'handle_httpstatus_list':[404,500,301]}设置了这个之后，在httperror里面就会进入allowed_status,下面的判断语句会显示，如果你的状态码在这个里面，就会返回到spider里面让你自己去处理
 
 3、
+（如果不想在某一个request中加，希望在整个spider里面都处理）
 在jobbole.py文件中设置
 handle_httpstatus_list= [404]
 
@@ -1336,18 +1819,31 @@ scrapy提供了方便的收集数据的机制，数据以key/value方式存储�
 让spider的统计信息统一管理，让我们操作起来非常简单
 常见的数据收集器的使用方法：
 通过stats属性来使用数据收集器
+----------------------------------------------------------------------------
 
-stats是类的对象（里面放置了很多spider的数据），他的对象有一些函数：
+比如scrapy在运行的时候，计算我们到底发出了多少个requests
+或者parse中我们yield了多少个item出去 
+----------------------------------------------------------------------------
+
+stats是类的对象（里面放置了很多关于spider的数据），他的对象有一些函数：
 设置数据: 
 stats.set_value('hostname',socket.gethostname())
-增加数据：  （调用inc_value数据就会加1）
+
+增加数据：  （调用inc_value数据就会加1）（比如计算我们爬了多少页面）
 stats.inc_value('pages_crawled')
+
 当新的值比原来的值大的时候，设置为新的数据：
 stats.max_value('max_items_scraped',value)
+
 当新的值比原来的值小的时候，设置为新的数据：
-stats.min_value('max_items_scraped',value)
+stats.min_value('min_free_memory_percent',value)
+
 获取数据:
-stats.get_value('hostname',socket.gethostname())
+stats.get_value('pages_crawled')
+
+获取所有数据：(这个方法就会把我们stats的所有数据打印出来)
+stats.get_stats()
+{'pages_crawled': 1238, 'start_time': datetime.datetime(2009, 7, 14, 21, 47, 28, 977139)}
 
 # 数据收集器：
 一、MemoryStatsCollector   （用的最多的）
@@ -1376,6 +1872,8 @@ def __init__(self):
 def parse(self,response):
     if response.status == 404:
         self.fail_urls.append(response.url)
+        #spider里面有一个stats  stats是放在crawler里面的
+        # 这样调用就是failed_url加1，failed_url没有值，在这里会设置一个默认值
         self.crawler.stats.inc_value("failed_url")
 	...................
     
@@ -1422,7 +1920,7 @@ spider_idle   当spider空闲的时候，这个信号就开始发送
 			 rsquests正则等待被下载的时候
 			 request被调度的时候
 			 items正在 itempipeline中被处理的时候
-		 当改信号所有处理器被调用后，如果spider仍然保持空闲状态，引擎将会关闭该spider，当spider被关闭后，spider_close信号将会被发送
+		 当该信号所有处理器被调用后，如果spider仍然保持空闲状态，引擎将会关闭该spider，当spider被关闭后，spider_close信号将会被发送
         
 spider_error  当回调函数产生错误的时候，改信号被发送
 
@@ -1450,9 +1948,11 @@ def __init__(self):
     self.fail_urls=[]
     dispatcher.connect(self.handle_spider_closed,signals.spider_closed)
     
+    #如果结束 将所有的fail_url拼接成一个字符串
+    #reason
 def handle_spider_closed(self，spider，reason):
     self.crawler.stats.set_value("failed_urls",",".join(self.fail_urls))
-
+	pass
 def parse(self,response):
     if response.status == 404:
         self.fail_urls.append(response.url)
@@ -1515,21 +2015,56 @@ EXTENSIONS = {
 
 throttle.py  是限速的
 telnet.py    
-corestats.py  记录了spider一些比较重要的统计信息（里面的整个原理都是通过crawler实现的）
 
-memusage.py   系统的信息
+
+
+
+```
+
+```python
+corestats.py  记录了spider一些比较重要的统计信息
+（里面的整个原理都是通过crawler实现的）
+ # 这个函数里绑定了大量的信号
+ # 以及设置信号绑定的值   
+def from_crawler(cls,crawler):
+    pass
+
+```
+
+```python
+memusage.py   系统的信息(监控内存使用的情况)
 通过信号量绑定一些处理函数（逻辑自便）
 ```
 
 
 
+在middle的manage里面也是做了信号量的绑定
+
+所以调用的时候，必须得调用process_request()这个函数
+
+在extension里面我们需要自己来绑定
+
+灵活性更高
+
+```python
+ext = cls(item_count)
+crawler.signals.connect(ext.spider_opened,signal=signals.spider_opened)
+crawler.signals.connect(ext.spider_close,signal=signals.spider_close)
+crawler.signals.connect(ext.item_scraped,signal=signals.item_scraped)
+
+def spider_opened(self,spider):
+    logger.info("opened spider %s",spider.name)
+def spider_close(self,spider):
+    logger.info("close spider %s",spider.name)
+def item_scraped(self,item,spider):
+    self.items_scraped += 1
+    if self.items_scraped % self.item_count==0
+	    logger.info("scraped %d items",self.items_scraped)
+```
 
 
 
-
-
-
-
+通过信号量绑定处理函数
 
 
 

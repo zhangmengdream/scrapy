@@ -1,12 +1,30 @@
 1148646628@qq.com     AA199110711aa
 
+
+
+有时候主目录在pycharm中设置成根目录可以导入文件，在黑屏中却会显示出错，这时候是因为黑屏并不知道主目录的位置，需要在setting中设置
+
+setting是scrapy 的主入口，我们可以将pythonpath的操作放到setting中操作
+
+```python
+import os
+import sys
+# sys.path.insert(0,"这里写python path")
+BASE_DIR=os.path.dirname(os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0,os.path.join(BASE_DIR,'ArticleSpider'))
+#这样会把我们的python path加入到目录中，这样就可以找到util了
+
+这样路径就可以生效了
+```
+
+
+
 ## CrawlSpider源码剖析
 
 
 
 ```pthon
 CrawlSpider是个  类
-
 
 Spider里面有start_request  会遍历start_urls
 
@@ -93,7 +111,9 @@ self._follow_links = crawler.settings.getbool('CRAWLSPIDER_FOLLOW_LINKS', True)
 	这两个函数都是可以重载处理的 
     def parse_start_url(self, response):
         return []
-
+# 重载这个函数，和之前的parse功能是一样的，在crawl_spider中parse函数不能重载，已经被占用了
+    
+    
 	#这个函数处理parse_start_url 函数的return
     def process_results(self, response, results):
         return results
@@ -168,7 +188,7 @@ middleware 在setting中配置的 数字越小处理越优先，自己设置的�
 
 
 
-
+seo ？？？
 
 
 

@@ -18,9 +18,14 @@
 
 需求：
 
-request队列集中管理 
+request队列集中管理 （必须做成分布式的）
 
-去重集中管理
+```python
+scheduler是放到一个queue（队列）里面的，这个队列是放在我们的单机内存里面的
+
+```
+
+去重集中管理（必须做成分布式的）
 
 ```python
 这个集中管理不能放到scrapy中进行管理，因为scrapy并没有提供一种机制，可以让外部访问去重的set，所以上面的两个对列必须放到第三方的组件中去做，也就是redis
@@ -28,7 +33,7 @@ redis实际上就是内存数据库，也就是将所有的数据都放到内存
 
 ```
 
-![](http://m.qpic.cn/psb?/V12sfxtB3XMdNx/GqM7wzeCpOLxJVSPYRoOTDIoA6qZhltKDKl1Zs*Rdqg!/b/dPMAAAAAAAAA&bo=gASIAgAAAAADByw!&rf=viewer_4)
+![img](http://m.qpic.cn/psb?/V12sfxtB3XMdNx/GqM7wzeCpOLxJVSPYRoOTDIoA6qZhltKDKl1Zs*Rdqg!/b/dPMAAAAAAAAA&bo=gASIAgAAAAADByw!&rf=viewer_4)
 
 ### Redis的基本概念
 
@@ -90,7 +95,7 @@ windows下：
 
 
 - 列表
-  - lpush/rpush                                                      从左/右边传入，类似栈先进先出
+  - lpush/rpush     mylist  'sss'                             从左/右边传入，类似栈先进先出
   - blpop/brpop  key1[key2]  timeout                从左/右边删除一个元素timeout是  值如果没有元素的                                                                                                                            话会等设置的几秒钟、timeout的参数必须要传
   - lpop/rpop                                                          从左/右边删除一个元素，没有的话直接返回空
   - lrange  mylist  0 10                                           查看列表的开始到结束
@@ -113,20 +118,34 @@ windows下：
 - keys *                           查看所有
 - flushall                         将redis里面的所有数据清空
 
+
+
 ### scrapy   redis  搭建分布式爬虫 的使用
 
 python redis的使用
 
 ```python
-1.在setting中设置
+# 预热准备
+
+在setting中设置（必须要设置）
+
 SCHEDULER = "scrapy_redis.scheduler.Scheduler"
+# 去重的class  必须要替换的
 DUPEFILTER_CLASS = "scrapy_redis.dupefilter.RFPDupeFilter"
+
+#scrapy-redis 为我们实现了一个基于redis的pipeline，会将item进行序列化，发送到redis中
+#这样我们所有解析出来的item都会放置到redis中，这样我们在启动一个爬虫的时候，会将我们的redis的保存做成分布式的（这个pipeline不设置也是可以的）
 ITEM_PIPELINES = {
     'scrapy_redis.pipelines.RedisPipeline': 300
 }
+
 scrapy为我们提供一个基于redis pipeline，将item序列化发送到redis中，这样所有解析出来的item都会放置在redis中，这样当我们启动爬虫的时候，就可以将item的保存做成分布式的
 
 再写spider的时候，不能再继承我们自己的spider了，而是要继承redis的spider
+
+启动runserver的时候，所有的request就不是本地的scheduler来完成的 
+用的是scrapy_redis的scheduler来完成的
+
 
 启动一个spider之后，必须先往队列里面放置一个初始化的start_url 
 现在所有的url都是放置在redis中了，所以初始的时候，需要往里面push一起始的url，这样才能够开始爬取
@@ -138,9 +157,19 @@ redis-cli  lpush  myspider:start_urls http://google.com
 新建一个项目:
 scrapy startproject scrapyRedisTest
 
-将scrapy redis 的源码从github克隆下来 拷贝进项目中
+将scrapy redis 的源码从github克隆下来 拷贝进项目中(在一级目录下，和spider同级)
 
 parse里面就可以和之前一样使用，因为RedisSpider 也是继承spider的
+
+spider.py   (需要写基于redis的spider)，在get上面有操作做步骤:
+---- RedisSpider继承了RedisMixin 和 Spider
+
+from scarpy_redis.spider import RedisSpider
+class MySpider(RedisSpider):
+    name='myspider'
+    def parse(self,response):
+        pass
+
 ```
 
 
@@ -150,13 +179,39 @@ parse里面就可以和之前一样使用，因为RedisSpider 也是继承spider
 ```markdown
 #所有函数大致浏览
 
+spider的
+class RedisMixin(object)：
+这个类里面有个
+ setup_redis()
+setup_redis 每一个spider都有一个redis_key,相当于redis里面的列表的名称，因为不同的
+spider，需要使用不同的redis的list，所以这里是spider需要设置redis_key
+scrapy_redis帮我们实现了两种  一种是基于于crawler实现的  一种是基于 spider实现的 
+
+spider中的
+  next_request()
+之前的spider获取next_request的时候，是根据scrapy的scheduler维持一个queue来完成的
+scrapy的scheduler维持一个queue，这个队列是放在内存当中的
+
+现在是让在redis中用set或者list来完成
+所以获取next_request 就不一样了
+
+在yield requests里放到队列里面去
+在next_request里面pop出来
+
+requests也可以序列化写入redis中，将这个类序列化成字符串，后面还可以反序列化成我们的类
+（picklecompat.py  这个源码中做到的）
+
+
+
+-------------------------------------------------------------------------------
+
 connection.py    用来连接redis的connection文件（用的非常多也是最重要的文件）
 
 defaults.py      default的设置的文件
 
 dupefilter.py	 用来过滤的文件，用来替换scrapy默认的去重器
 
-picklecompat.py  用来做序列化的（比如request、pipeline等）
+picklecompat.py  用来做序列化的（比如request、pipeline等需要序列化的东西）
 
 pipelines.py     将我们的一些item保存到redis中，实现了item的分布式的保存
 
@@ -179,19 +234,45 @@ utils.py         做了一个py3的兼容
 
 
 ```python
-schedule的原理是将request放入队列中的
-在使用redis分布式的时候就不能放入队列中了，因为队列是存放在内存的
+redis可以存放我们的request信息
 
-这里是首先将request放入redis中，读取next-request的时候，是从redis的set中或者队列中读取出来的
-item进入到itempipeline之后，pipeline会将item序列化放到redis中。item再取出数据通过item processes（保存数据库的过程可以写在这里）
+spide yield出来的item，本身scrapy是通过engin传到schenduler中的内存中的 
+schedule的原理是将request放入队列中的
+在使用redis分布式的时候就不能放入队列中了
+因为队列是存放在内存的，scrapy默认是不可以共享内存的，
+
+所以这里
+首先是将request放到redis中，读取next_request的时候,也是从redis的set或者list中读取出来的
+这里是一个双向的过程
+pipeline也是一样，item进入到pipeline，这里就会将item序列化到redis中，
+然后这个redis在通过itemProcess取出数据（保存数据库的过程可以写在这里）
+
 
 下载那块没有变
 
 去重器：
 
-分布式将我们绝大部分的中间状态都保存在了redis中了
 
-好处：爬虫的启动与暂停就不需要scrapy的启动与暂停了，因为这里所有的重要的状态，都已经放入到了redis中了
+通过redis保存 request item 去重的信息  三种信息，这三种信息将我们的中间状态大部分都保存在了redis中了，
+这样最大的好处是：爬虫的启动与暂停就不需要scrapy的启动与暂停了，因为这里所有的重要的状态，都已经放入到了redis中了
+
+实际上scrapyredis还是有很多东西是没有保存的 
+（我们用scrapy-redis进行保存的时候，除了保存去重的队列还保存了爬虫的状态）
+
+```
+
+```python
+草稿:
+    会一直监听我们的redis队列
+    
+    运行需要调用lpush方法，初始的url，push进来
+    	
+    key使用在jobbole spider里面自己设置的redis_key
+    
+    zset
+    默认jobbole requests有一个优先级的，为了满足优先级，使用zset
+    
+    
 ```
 
 
@@ -199,13 +280,16 @@ item进入到itempipeline之后，pipeline会将item序列化放到redis中。it
 ### connection.py (创建了redis的连接)
 
 ```python
+连接redis最基本的文件
 
 这个文件提供了get_redis_from_settings(settings)
 
 里面引入default
 from . import defaults 
 
+映射setting里面的redis的配置
 
+params 
 
 
 ```
@@ -253,9 +337,6 @@ START_URLS_AS_SET = False
 ```python
 
 
-
-
-
 def request_seen(self,request):
    fp = self.request_fingerprint(request)
         # This returns the number of values added, zero if already exists.
@@ -263,8 +344,7 @@ def request_seen(self,request):
         #sadd 是set的add  key是名称   fp就是request的指纹，加到key里面，如果成功就会返回1，如果失败就会返回0  
         return added == 0
 		#  返回0 的话就代表入库失败，入库失败了就代表已经存在了，
-         # 也就是request_seen等于true了
-
+         #  也就是request_seen等于true了
 
  
 ```
@@ -284,7 +364,9 @@ def request_seen(self,request):
 
 （好处）放到redis中，我就可以多启几个进程，甚至可以只写一段代码，不需要爬虫，写一段从redis里面取数据的python文件，然后不停的入库即可
 
+之前说过要将item保存在redis中需要调用redispipeline
 
+class RedisPipeline()
 
     @classmethod
     def from_settings(cls, settings):
@@ -316,7 +398,8 @@ def request_seen(self,request):
         data = self.serialize(item)
         self.server.rpush(key, data)
         return item
-    #        self.server.rpush(key, data) 因为item需要顺序的处理，所以这里调用了对列rpush是放到对列的对尾
+	# self.server.rpush(key, data)
+	# 因为item需要顺序的处理，所以这里调用了队列rpush是放到对列的对尾
 
 ```
 
@@ -346,7 +429,7 @@ class FifoQueue(Base):
         
         
 class PriorityQueue(Base):	
-# 调用的是zcard  有序集合
+# 调用的是zcard  有序集合  默认使用这个队列
     def push(self, request):
         data = self._encode_request(request)
         score = -request.priority    # 这里是设置的优先级的 
@@ -369,7 +452,10 @@ score 是分数
         
     
 class LifoQueue(Base):	
+    
+# last in  first out 
 # 后进先出
+# 类似栈
 
 ```
 
@@ -422,6 +508,12 @@ def from_settings
 ### spiders.py
 
 ```python
+
+RedisMixin：
+重载了spider里的入口函数start_request
+好处：这样就可以调用自己的next_requests了，这样就允许我们获取首个start_url的时候，是通过redis获取的而不是通过schedule获取的
+最开始的时候schedule是没有url的
+
 class RedisMixin(object):
     redis_key = None
     redis_batch_size = None
@@ -487,6 +579,7 @@ class RedisMixin(object):
 
     def next_requests(self):
         """允许我们获取首个 start_url的时候 是通过redis获取的 ，而不是schedule（最初的时			候schedule是没有数据的 ）
+        REDIS_START_URLS_AS_SET 这里的设置(设置成对应的true或false)要一致是set还是list
         """
         use_set = self.settings.getbool('REDIS_START_URLS_AS_SET', defaults.START_URLS_AS_SET)
         fetch_one = self.server.spop if use_set else self.server.lpop
@@ -510,7 +603,8 @@ class RedisMixin(object):
 
     def make_request_from_data(self, data):
         """
-
+		bytes_to_str 是util中的，是为了兼容py2和py3
+		
         """
         url = bytes_to_str(data, self.redis_encoding)
         return self.make_requests_from_url(url)
@@ -531,7 +625,9 @@ class RedisMixin(object):
 class RedisCrawlSpider(RedisMixin, CrawlSpider):
 """
 基于CrawlSpider的spider
+写全站的爬虫的时候，基于这个爬虫就可以了
 """
+	
 ```
 
 ### utils.py
@@ -544,6 +640,75 @@ class RedisCrawlSpider(RedisMixin, CrawlSpider):
 
 ### 如何将 bloomfilter  集成到scrapy-redis中
 
+```python
+bloomfilter.py   (bloomfilter的代码)
+
+import mmh3
+import redis
+import math
+import time
+
+
+class PyBloomFilter():
+    #内置100个随机种子
+    SEEDS = [543, 460, 171, 876, 796, 607, 650, 81, 837, 545, 591, 946, 846, 521, 913, 636, 878, 735, 414, 372,
+             344, 324, 223, 180, 327, 891, 798, 933, 493, 293, 836, 10, 6, 544, 924, 849, 438, 41, 862, 648, 338,
+             465, 562, 693, 979, 52, 763, 103, 387, 374, 349, 94, 384, 680, 574, 480, 307, 580, 71, 535, 300, 53,
+             481, 519, 644, 219, 686, 236, 424, 326, 244, 212, 909, 202, 951, 56, 812, 901, 926, 250, 507, 739, 371,
+             63, 584, 154, 7, 284, 617, 332, 472, 140, 605, 262, 355, 526, 647, 923, 199, 518]
+
+    #capacity是预先估计要去重的数量
+    #error_rate表示错误率
+    #conn表示redis的连接客户端
+    #key表示在redis中的键的名字前缀
+    def __init__(self, capacity=1000000000, error_rate=0.00000001, conn=None, key='BloomFilter'):
+        self.m = math.ceil(capacity*math.log2(math.e)*math.log2(1/error_rate))      #需要的总bit位数
+        self.k = math.ceil(math.log1p(2)*self.m/capacity)                           #需要最少的hash次数
+        self.mem = math.ceil(self.m/8/1024/1024)                                    #需要的多少M内存
+        self.blocknum = math.ceil(self.mem/512)                                     #需要多少个512M的内存块,value的第一个字符必须是ascii码，所有最多有256个内存块
+        self.seeds = self.SEEDS[0:self.k]
+        self.key = key
+        self.N = 2**31-1
+        self.redis = conn
+        print(self.mem)
+        print(self.k)
+
+    def add(self, value):
+        name = self.key + "_" + str(ord(value[0])%self.blocknum)
+        hashs = self.get_hashs(value)
+        for hash in hashs:
+            self.redis.setbit(name, hash, 1)
+
+    def is_exist(self, value):
+        name = self.key + "_" + str(ord(value[0])%self.blocknum)
+        hashs = self.get_hashs(value)
+        exist = True
+        for hash in hashs:
+            exist = exist & self.redis.getbit(name, hash)
+        return exist
+
+    def get_hashs(self, value):
+        hashs = list()
+        for seed in self.seeds:
+            hash = mmh3.hash(value, seed)
+            if hash >= 0:
+                hashs.append(hash)
+            else:
+                hashs.append(self.N - hash)
+        return hashs
+
+
+pool = redis.ConnectionPool(host='127.0.0.1', port=6379, db=0)
+conn = redis.StrictRedis(connection_pool=pool)
+
+start = time.time()
+bf = PyBloomFilter(conn=conn)
+bf.add('www.jobbole.com')
+bf.add('www.zhihu.com')
+print(bf.is_exist('www.zhihu.com'))
+print(bf.is_exist('www.lagou.com'))
+```
+
 
 
 bloomfilter  是最省内存的一种去重策略，他的对bitmap升级的一种方式，因为bitmap当url过多的时候，冲突性很高，很多url可能会映射到同一个地址，。
@@ -553,6 +718,10 @@ bloomfilter  是使用了多个hash函数，来对url进行多次的bitmap的映
 bloomfilter的原理，和整体思想，去网上自行百度
 
 7575651
+
+当我判断某一个url存在于bitset中的时候，如果判断它已经存在bitset中的时候有一定概率会出错
+
+只有判断某些url已经存在的时候有一定概率会出错，判断不存在就一定是不存在的
 
 ```python
 
@@ -572,14 +741,17 @@ set = ('abc')
 
 bloomfilter的算法 是创建一个M位的 BitSet
 
+
 这里就是bloomfilter的源码，可以直接粘贴使用
 https://github.com/liyaopinner/BloomFilter_imooc/blob/master/py_bloomfilter.py
+将下载下来的bloomfilter.py放到util包里面
+需要pip install mmh3
 
-    
+
 #  bloomfilter如何集成到去重器中
 dupefilter.py 是去重器 -- 改造他，将bloomfilter集成进来
 
-
+将bloomfilter 集成到去重器中来
 改造dupefilter.py:
 from ScrapyRedisTest.utils.bloomfilter import conn,PyBloomfilter
     

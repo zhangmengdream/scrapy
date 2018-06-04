@@ -955,6 +955,10 @@ GET lagou/testjob2/_search
 新建一个pipeline将数据写入到elasticsearch中
 
 ```python
+git上搜索 elasticsearch-dsl 这个是elasticsearch官方为我们提供的接口包
+
+pip install elasticsearch-dsl
+
 pipeline.py
 
 class ElasticseacherPipeline(object):
@@ -1001,13 +1005,23 @@ class ManhuaItem(scrapy.Item):
         return
     
 在setting中配置pipeline
+
+
+
+
+
+定义自己的model 
+es_type.py
+
+
+
 ```
 
 
 
 #### 通过jango和elasticsearch打造搜索引擎网站
 
- 分析需求
+#####  分析需求
 
 ```python
 网站的功能：
@@ -1021,15 +1035,25 @@ class ManhuaItem(scrapy.Item):
 点击我的搜索里面的标签，会跳转到响应的搜索，下面还有分页的功能
 ```
 
-智能提示：
+##### 智能提示：
 
 ```python
+elasticsearch支持搜索建议
+可以做纠错，智能提示
 
+elasticsearch为我们提供的搜索建议的接口：
 
+https://www.elastic.co/guide/en/elasticsearch/reference/6.2/search-suggesters-completion.html
 
+    
+es为我们提供的自动补全的suggest
+    
+completion Suggest
+```
 
+搜索建议池
 
-
+```python
 
 ```
 
