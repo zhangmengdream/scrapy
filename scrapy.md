@@ -519,7 +519,7 @@ class MysqlPipeline(object):
         self.conn.commit()
 
 方法二： （异步的操作）
-# spider的解析速度肯定是超过数据库的入库速度，如果后期爬取的url越来越多，入库速度回跟不上解析速度，这样的话就会堵塞   tw isted给我们提供了mysql插入异步化的操作
+# spider的解析速度肯定是超过数据库的入库速度，如果后期爬取的url越来越多，入库速度回跟不上解析速度，这样的话就会堵塞   twisted给我们提供了mysql插入异步化的操作
 需要先在 setting里面配置
 MYSQL_HOST = '127.0.0.1'
 MYSQL_DBNAME = 'manhua'

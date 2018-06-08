@@ -1,4 +1,203 @@
+有中文注释。不能使用的时候在上面加
+
+coding=utf-8  就可以了
+
+
+
 ### scrapy redis的分布式爬虫以及源码解析
+
+```py
+redis_scrapy并不是框架而是基于scrapy框架之上的组件
+
+用来替换scrapy原来的一些东西，让scrapy拥有了只支持分布式的功能
+
+scrapy本身是有去重的，是在内存中执行的，请求量非常大的时候scrapy的占用量会非常高
+
+将去重的指纹队列放到数据库里，如果我想临时中断他，修改一些东西，再次读取的时候，会读取redis数据库里的请求指纹，之前爬过的请求，就不会再去做了
+
+itempipeline  管道文件，redis也提供了一个模板（在redis数据库里统一存储）
+
+redis是基于内存的，一旦关机，内存的数据会被清空
+
+redis数据库会有三个库
+存储数据的
+存储请求的队列
+存储请求的指纹 --  如果没有过，留下指纹，进入队列，如果有过就不能进入队列
+
+所有的爬虫端共享一个redis数据库
+
+数据用itemprocess这个单独的文件拿出来 
+
+如果不拿出来放在redis数据库里也可以但是这样不安全，数据可能会丢失
+```
+
+scrapy-redis策略
+
+```python
+假设有四台电脑（python是跨平台的，在什么操作系统中都是一样的）
+w10  mac  ubuntu  centos 任何一台电脑都可以作为Master或者Slaver端
+
+Master端 只能有一个（核心服务器）不负责做爬取，但是也可以做爬取，但是爬取的数据就存储在了自己本身的数据库中了，他本身也可以做爬虫端，不过一般在项目里面服务器端是不会做爬取的，因为数据集群一旦做起来的话，网络流量或者磁盘的耗用量是非常高的，所以我们需要尽可能的减少服务器的复杂，所以服务器不做爬取，只做服务器就可以了
+做 指纹
+
+Slaver端 （爬虫程序执行端）可以有多个  负责执行爬虫程序，运行过程中提交新的request给Master
+
+Master端负责request的去重和任务分配，他拿到request之后，把请求发给slaver端，slaver拿到新的请求之后交给master端，master端进行指纹去重，去重成功进入队列，然后再发给slaver端进行爬取（发给slaver按照优先级来），有数据的话也会发给master端做数据存储
+
+master有一个redis数据库，负责将未处理的request去重和任务分配，将处理后的request加入待爬取的队列，并且存储爬取的数据
+```
+
+![52820126060](C:\Users\dream\AppData\Local\Temp\1528201260600.png)
+
+```python
+
+scrapy_redis默认使用的 任务调度，去重、scrapy、存储，redis都已经帮我们做好了
+我们只需要继承法redisSpider 或者rediscrawlspider，指定一个redis_key就可以了
+
+redis_key:
+爬虫写好之后，部署好之后，各个爬虫端把程序执行起来，他们不会立即爬数据，他们会等待master端给他们分配任务，这个任务第一个起点就是redis_key指定的。
+比如我们有四台机器，这四台机器把爬虫端启动起来了，一开始队列里没有请求，所有爬虫都处于等待状态，一旦master端往redis数据库里push一个请求过去们所有的爬虫就起动了 
+
+缺点是：scrapy_redis调度的任务是request对象，里面信息量比较大（不仅包含url，还有callback函数，headers等信息）可能导致的结果就是会降低爬虫速度，而且会占用redis大量的内存空间，所以如果要保证效率，就需要一定的硬件水平
+
+分布式首先要保证机器成本和人工成本是否是满足的，同一个局域网里搭分布式也是不明智的，因为带宽是统一的（同一个），最好的方法在不同的网段里面搭配各种不一样的请求，这样才会把分布式的性能提升到极致，也就是需要一定的硬件水平
+
+lpush  myspider:start_urls http：//www.domz.org/
+
+lpush 代表启动指令，网数据库里面push一条信息，这个信息代表我的这个指令
+myspider:start_urls 是在spider里面配置的redis_key的值
+http：//www.domz.org/  这个就是代表start_urls
+
+一旦在master发送这条指令，其他的slaver端都会执行（只要连接的是同一个数据库）
+
+
+
+scrapy_redis写的爬虫的执行代码
+scrapy  runspider  myspider_redis.py
+
+与单机的区别就是多了一个
+redis_key
+
+少了一个start_url
+
+redis分布式的start_url在redis_key 上面push上去
+
+动态的获取域的范围:
+def __init__(self,*args,**kwargs):
+    domain = kwargs.pop('domain','')
+	self.allowed_domains=filter(None,domain.split(','))
+    super(Myspider,self).__init__(*args,**kwargs)
+    
+
+请求统一处理，数据统一存储,所有的都是统一管理
+
+服务器端只是负责接收数据（甚至可以不需要scrapy，不需要python）
+服务器端把redis装好
+redis.conf 
+设置bind127.0.0.1注释掉
+
+（保证master端和slave端都能够互相ping通）
+把数据库服务启动起来
+把主机ip和端口号告诉爬虫端的机器
+爬虫端的机器在setting里面设置redis的主机ip和端口号
+这样他们的数据就指了主机了
+然后挨个启动slave端的爬虫机器
+
+然后再redis数据库是输入redis_key(指明第一个要发送的请求)  这样就可以跑起来了
+lpush  redis_key http://sss
+
+检查redis数据库服务启动了没有，自己在redis数据库中测试一下，看看能否进入redis-cli能够进入客户端就代表可以启动
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### redis 
+
+```python
+远程连接一个数据库、
+启动：sudo  redis-cli -h 192.168.21.64
+
+这样两个就可以连接远程的redis了
+
+这是各个电脑之间数据库的联通
+
+真正写爬虫的时候，爬虫端是不需要启动redis-server的，master端启动就可以了，只需要爬虫端能够读取redis数据库，也就是能ping通服务端，（爬取的时候我们的组件会帮我们联通redis数据库） 只有slave端能够读取到master端的redis数据库，就表示能够连接成功，可以实施分布式
+
+
+
+```
+
+
+
+```python
+1.在setting中设置
+# 使用scrapy_redis里面的去重组件，不使用scrapuy默认的去重
+SCHEDULER = "scrapy_redis.scheduler.Scheduler"
+# 使用了scrapy_redis的调度器组件
+DUPEFILTER_CLASS = "scrapy_redis.dupefilter.RFPDupeFilter"
+# 使用了scrapy_redis的管道组件，支持将数据存储到爆redis数据库里，必须启动
+ITEM_PIPELINES = {
+    'scrapy_redis.pipelines.RedisPipeline': 300
+}
+# 允许暂停，redis请求记录不丢失
+SCHEDULER_PERSIST=True
+如果设置为false，暂定爬取之后就会从头开始爬了
+
+# scrapy_redis 默认的请求队列形式（按照优先级顺序）
+SCHEDULER_QUEUE_CLASS = 'scrapy_redis.queue.SpiderPriorityQueue'
+
+# 这里还可以自己加一些其他的参数
+# 指定数据库的主机ip 
+REDIS_HOST = '192.168.0.0'
+# 指定数据库的端口号
+REDIS_PORT = 6379
+# 这些如果不写，数据库就默认是本地，127.0.0.1,写的话就支持存储到其他的数据库里
+
+DOWNLOAD_DELAY=1
+# 下载延迟
+```
+
+
+
+
+
+开始爬取的时候，一切准备就绪后在redis这端发起一个指令
+
+eg：
+
+lpush  myspider:start_url   http://www,dmoz.org/
+
+(一般不需要在这里push，在spider里面会有redis_key直接爬取)
+
+redis_key = 'myspider:start_urls'
+
+这个格式不是必须的，但是一般都使用这个格式
+
+
+
+相当于slaver端开启爬虫没有请求，等待状态，等待master端发一个指令过去，让他执行
+
+
+
+在redis中如果爬取了一半想要增加功能然后继续爬取的话，爬取过的网站就不会再继续爬取了，因为指纹已经记录了这个网站（这就是redis分布式的特性）
+
+
+
+
 
 ###### 主要通过分析开源的scrapy resid来了解什么是分布式爬虫，以及如何将scrapy变成一个分布式的爬虫
 
@@ -119,11 +318,34 @@ python redis的使用
 
 ```python
 1.在setting中设置
+# 使用scrapy_redis里面的去重组件，不使用scrapuy默认的去重
 SCHEDULER = "scrapy_redis.scheduler.Scheduler"
+# 使用了scrapy_redis的调度器组件
 DUPEFILTER_CLASS = "scrapy_redis.dupefilter.RFPDupeFilter"
+# 使用了scrapy_redis的管道组件，支持将数据存储到爆redis数据库里，必须启动
 ITEM_PIPELINES = {
     'scrapy_redis.pipelines.RedisPipeline': 300
 }
+# 允许暂停，redis请求记录不丢失
+SCHEDULER_PERSIST=True
+# scrapy_redis 默认的请求队列形式（按照优先级顺序）
+SCHEDULER_QUEUE_CLASS = 'scrapy_redis.queue.SpiderPriorityQueue'
+
+# 这里还可以自己加一些其他的参数
+# 指定数据库的主机ip 
+REDIS_HOST = '192.168.0.0'
+# 指定数据库的端口号
+REDIS_PORT = 6379
+# 这些如果不写，数据库就默认是本地，127.0.0.1,写的话就支持存储到其他的数据库里
+
+
+
+
+
+
+
+
+
 scrapy为我们提供一个基于redis pipeline，将item序列化发送到redis中，这样所有解析出来的item都会放置在redis中，这样当我们启动爬虫的时候，就可以将item的保存做成分布式的
 
 再写spider的时候，不能再继承我们自己的spider了，而是要继承redis的spider
