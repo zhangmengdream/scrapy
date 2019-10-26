@@ -1,3 +1,9 @@
+
+
+
+
+
+
 elasticsearch 是最流行的分布式开源搜索引擎，被大量的应用在很多大公司中
 
 
@@ -269,9 +275,9 @@ response里面本身是带有xpath的方法的
 # shell环境下调试的命令
 scrapy shell http://blog.jobbole.com/113909/
 
+# 也可以在shell里面写入useragent
+scrapy shell -s USER_AGEBT=""  http://blog.jobbole.com/113909/
 ```
-
-
 
 
 
@@ -732,7 +738,63 @@ def check_login(self,response):
 
 （只有sql语句部分才是变化部分）
 
- 
+```py 
+提取出html页面中所有的url，并跟踪这些url进一步爬取
+如果提取的url中的格式为 /xx/xx/xx  就下载之后直接进入解析函数
+try:
+	import urlparse as parse
+except:
+
+headers = ''
+	
+def parse(self,response):
+	all_urls = response.css("a::attr(href)").extract()
+	all_urls = [parse.urljoin(response.url,url) for url in all_urls ]
+	all_urls = filter(lambda x:True if x.startswith('https') else False)
+	for url in all_urls:
+		# scrapy是通过yield，将requests提供给下载器的
+		# 这里一定是request对象，这个对象传递过去才有可能被下载器执行
+		yield scrapy.Request(request_url,headers=self.headers,callback='')
+		
+
+def parse_question(self,response):
+# 
+
+
+
+items.py页面 
+# 定义字段
+class zhihuquestionitem(scrapy.Item):
+# 问题item
+	zhihu_id = scrapy.Field()
+	......
+	
+class zhihuansweritem(scrapy.Item):
+# 知乎的问题回答item
+	zhihu_id = scrapy.Field()
+	......
+
+#############################################################################
+answer是有一个接口的，但是没有任何一个请求可以发送这个接口，所以，更无从得知next_url，因为起始url就没有，如果不发起请求的话，数据就回不来，所以需要发起一个初始请求
+
+在解析完字段之后发起请求
+
+#############################################################################
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -948,7 +1010,7 @@ class RandomUserAgentMiddle(object):
     	self.ua_type=crawler.settings.get('RANDOM_UA_TYPE','random')
         # 这个是在setting里面设置的  没有设置默认为random  也就是可以自定义请求头的浏览器类型
     @classmethod
-    def from_crawler(self,crawler)
+    def from_crawler(cls,crawler)
 		return cls(crawler)
     
     def process_request(self,request,spider):
@@ -1108,6 +1170,10 @@ tor洋葱浏览器
 比较安全，稳定
 
 ```
+
+
+
+
 
 ### 
 
@@ -1420,10 +1486,10 @@ browser = webdriver.Firefox(executable_path = '/home/test/Desktop/geckodriver')
 browser.get('https://www.weibo.com')
 
 import time
-time.sleep(15)
+time.sleep(18)
 
-browser.find_element_by_css_selector("#loginname").send_keys('13426039389')
-browser.find_element_by_css_selector(".info_list.password input[node-type='password']'] input").send_keys('zhangmengjie123')
+browser.find_element_by_css_selector("#loginname").send_keys('18715529161')
+browser.find_element_by_css_selector(".info_list.password input[node-type='password']").send_keys('zhangmengjie')
 browser.find_element_by_css_selector("a[node-type='submitBtn']").click()
 
 
@@ -1540,7 +1606,7 @@ class JobboleSpider(scrapy.spider):
       ......
         
 	def __init__（self）:
-        self.brower = webdriver.Chrome(execytable_path='D:/Temp.chromdriver.exe')         super(JobboleSpider,self).__init__()
+        self.brower = webdriver.Chrome(executable_path='D:/Temp.chromdriver.exe')         super(JobboleSpider,self).__init__()
 
 
 middlewares.py页面  (这里的browser调用的方法就是  spider.browser )
@@ -1587,7 +1653,16 @@ flisky/scrapy-phantomjs-downloader
 
 ```
 
-###    
+###    补充selenium
+
+```python
+有的只是获取某一部分的url，所以可以在middleware里正则匹配一部分request.url
+在middleware里面重载process_request()方法来调用selenium的时候，返回HtmlResponse，这样的话，他就不会调度下载器去下载了，因为selenium已经下载了
+
+
+```
+
+
 
 #### python提供的无界面环境，可以在
 
@@ -1998,6 +2073,7 @@ spider中间件能够重载的几个函数
 
 
 ```python
+
 
 加载和激活extension
 在settings里面设置extension

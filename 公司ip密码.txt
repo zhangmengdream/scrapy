@@ -1,0 +1,30 @@
+正式服 1
+60.205.229.59
+
+root
+
+HGTufepFY!s^FYqF
+
+
+crawler1
+39.97.180.224
+3c9g5AwPUlVRmEQK
+
+
+crawler2
+101.200.49.200
+C0meR2SLDpKoT9kS
+
+gitbash  登录服务器
+ssh root@60.205.229.59
+
+
+往服务器上传输文件
+scp /d/1111111111111111111111/News_2018/news/spiders/qq_news_energy.py  root@60.205.229.59:/home/mikefiles/scrapy_project/News_2018/news/spiders
+
+将远程服务器的文件下载到本地
+scp -r root@101.200.49.200:/home/mikefiles/scrapy_project/News_2018/news/run_spider_one-other2.py  /d/1111111111111111111111/News_2018/zm_bak
+
+
+
+

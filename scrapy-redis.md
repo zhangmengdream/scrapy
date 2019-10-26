@@ -2,6 +2,42 @@
 
 coding=utf-8  就可以了
 
+ensure_ascii=False  这里的意思是数据里如果有中文的话，会默认使用ascii编码，这里设置不启用ascii编码
+
+
+
+安装redis
+
+```python
+链接 ： https://redis.io/download
+里面有步骤
+
+wget http://
+ 
+
+如果要支持分布式的话，redis.conf 需要修改配置
+
+61行  
+bind 127.0.0.1  
+# 这个的意思是只支持本地读取
+# 注释掉，说明不在绑定本地的了，任何的数据库都可以访问，这样我的远程端才可以连接到master端的redis数据库
+
+129行
+daemonize no  
+
+# redis是否作为守护进程来使用
+# 这里改为yes就不需要开两个窗口启动redis了 
+# 守护的意思就是在后台执行不在前端显示
+```
+
+
+
+
+
+
+
+
+
 
 
 ### scrapy redis的分布式爬虫以及源码解析
@@ -30,6 +66,8 @@ redis数据库会有三个库
 
 如果不拿出来放在redis数据库里也可以但是这样不安全，数据可能会丢失
 ```
+
+
 
 scrapy-redis策略
 
@@ -851,59 +889,247 @@ lpush jobbole:start_urls http://blog.jobbole.com/all-posts/
 
 
 
+pipeline里面，如果写成json形式的
+
+```python
+import json
+class Youyuanpipeline(object):
+    def __init__(self):
+	    self.filename = open('youyuan,json','w')
+    def process_item(self,item,spider):
+        content = json.dumps(dict(item),ensure_ascii=False)+',\n'
+        self.filename.write(content.encoding('utf-8'))
+        return item
+    def close_spider(self,spider):
+        self.filename.close()
+```
+
+json格式不对的情况，可以先挨个写到列表里面，然后再把列表写入json里面
+
+```python
+class
+```
+
+
+
+上传代码给远程服务器做提交
+
+```python
+sftp
+
+如果我在ubuntu下面的写的代码，想发送到mac里面
+需要先打包
+tar -cvf youyuan.tar youyuan
+c   打包   
+v   显示压缩的过程   
+z   压缩
+f   待压缩的
+x   解包
+
+youyuan.tar   打包过后的包名
+youyuan       打包这个文件
+
+tar -cxvf youyuan.tar.gz youyuan
+打包和压缩
+
+tar包没有压缩的功能，只有打包的功能
+
+sftp  root@193
+sftp  用户名@ip地址
+加密码：
+
+youyuan.tar
+ 
+sftp> put  gas.tar
+sftp> ls   (远程的意思)
+sftp> lls  (本地的意思)
+
+在另一台机器上
+tar xvf  gas.tar   解压
+
+
+
+
+下载：scp -r 远程的用户名@远程ip:/文件地址 本地地址
+上传：scp -r 本地地址 远程的用户名@远程ip:/文件地址
+
+```
+
+
+
+```python
+分布式的执行命令：
+在 spider下面执行 scrapy runspider yy.py
+
+lpush redis_key  news.163.coms
+ 
+
+```
+
+
+
+```python
+class MyMongodb:
+    def __init__(self):
+        self.conn = None
+
+    def open_spider(self, spider):
+        self.conn = client = MongoClient('192.168.137.254', 27017)
+        # 初始化油表对象
+        self.db = client.zhiliandb
+
+    def process_item(self, item, spider):
+        self.db.zhiliansofttong.insert({"salary": item["salary"],
+                                'experience': item["experience"],
+                                'company': item["company"],
+                                "jobvacancy": item["jobvacancy"],
+                                "education": item["education"],
+                                "describes": item["describes"],
+                                "jobtype": item["jobtype"],
+                                "address": item["address"],
+                                "worktype":item["worktype"],
+                                "peoplenum": item["peoplenum"]
+                                })
+
+        return item
+
+    def close_spider(self, spider):
+        # 关闭mysql连接和游标
+        self.conn.close()
+```
 
 
 
 
 
+```python
+url = bus_item.get_xpath('//img[@class='']/@src')   get_xpath的意思就是直接取值赋值给url   												只有一个参数
+bus_item.add_value('url',response.url)     直接给一个值
+```
+
+```python
+数据获取的时间，爬虫的名字   经过这个管道就会给他加上这两个字段
+
+class ExamplePipeline(object):
+    def process_item(self,item,spider):
+        item['crawled'] = datetime.utcnow()
+        item['spider'] = spider.name
+        return item
+
+
+```
+
+文件里有中文注释的时候 需要加上
+
+```pu
+# -*- coding: utf-8 -*-
+```
+
+执行分布式命令
+
+```python
+scrapy runspider myspider.py
+```
+
+
+
+在spider下面执行
+
+rule规则，也可以写css规则
+
+```pyt
+rules=[
+    Rule(LinkExtractor(
+    	restrict_css=('.top','.sub','.cat')),callback='sss'.follow=True
+    ),
+]
+```
 
 
 
 
 
+.com是商业网站
+
+.org是非盈利机构
+
+lpush  qicha:spider   https://www.qichacha.com/
 
 
 
 
 
+爬虫端不需要启动redis_server,
+
+dupefilter  请求指纹，也就是哈希值
+
+requests    是所有的请求，是由一堆16进制显示的，可以使用表结构键值 HEX  TABLE
 
 
 
 
 
+**sudo apt-get install virtualenv**
+
+**sudo apt-get install virtualenvwrapper**
+
+**source /usr/share/virtualenvwrapper/virtualenvwrapper.sh**     注意路径
+
+新开一个终端，先mkvirtualenv「项目名字」
+
+配置workon 环境变量
+
+vi ~/.bashrc
+
+1.接着，我们需要配置下 ~/.bashrc，将 virtualenv 添加进去：
+
+​    即将:
+
+​    export WORKON_HOME=$HOME/.virtualenvs
+
+​    source /usr/local/bin/virtualenvwrapper.sh
+
+​    复制到 ~/.bashrc中,保存退出
+
+2.让 bashrc 生效：
+
+执行source ~/.bashrc命令
+
+****
+
+root@iZbhb13x4ji74cZ:/usr/local/bin# workon env1
+
+
+
+/bin/bash
 
 
 
 
 
+sudo sh rsyncclient.sh
+
+rsyncclient.sh ---------
+
+source ${ABSPATH}/client.conf
+
+\-------------------
+
+报错: source: not found
+
+原因：sh和bash是不同的shell,sh中没有source命令。
+
+解决办法：sudo bash  rsyncclient.sh
 
 
 
+cpy2 = soup.find('div',class='aaa')   这个代表找到class为aaa的div  返回的是一个列表
 
+```python
+company_full_name = cpy2_content[1].get_text().strip()[len("公司全称:"):] if  cpy2_content[1] else ''
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+意思是如果cpy2_content[1] 有值就走前面，没有值就为空
+```
 
 
 
